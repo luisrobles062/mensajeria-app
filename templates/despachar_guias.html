@@ -1,40 +1,109 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <title>Despachar Guías</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+    <meta charset="UTF-8" />
+    <title>CERTISERVI - Despachar Guías</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <style>
+        body {
+            background-color: #1e293b;
+            color: #f1f5f9;
+            font-family: 'Montserrat', sans-serif;
+            padding: 40px;
+        }
+        .container {
+            max-width: 600px;
+            background: #334155;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 0 15px rgba(14,165,233,0.7);
+        }
+        h2 {
+            color: #38bdf8;
+            margin-bottom: 25px;
+            font-weight: 700;
+        }
+        label {
+            font-weight: 600;
+        }
+        select, textarea {
+            background: #475569;
+            border: none;
+            border-radius: 8px;
+            padding: 10px;
+            color: #f1f5f9;
+            width: 100%;
+            margin-bottom: 20px;
+            font-size: 1rem;
+            font-family: monospace, monospace;
+            resize: vertical;
+        }
+        button {
+            background-color: #0ea5e9;
+            border: none;
+            padding: 12px 20px;
+            color: white;
+            font-weight: 700;
+            border-radius: 8px;
+            width: 100%;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        button:hover {
+            background-color: #0284c7;
+        }
+        .alert {
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+        a.link-home {
+            margin-top: 15px;
+            display: inline-block;
+            color: #94a3b8;
+            text-decoration: none;
+        }
+        a.link-home:hover {
+            color: #0ea5e9;
+        }
+        small {
+            color: #94a3b8;
+            font-style: italic;
+            display: block;
+            margin-bottom: 10px;
+        }
+    </style>
 </head>
-<body class="bg-light">
-    <div class="container mt-5">
-        <h1 class="mb-4">🚚 Despachar Guías</h1>
+<body>
+    <div class="container">
+        <h2>Despachar Guías</h2>
 
-        {% with messages = get_flashed_messages() %}
+        {% with messages = get_flashed_messages(with_categories=true) %}
           {% if messages %}
-            {% for message in messages %}
-              <div class="alert alert-info">{{ message }}</div>
+            {% for category, message in messages %}
+              <div class="alert alert-{{ 'danger' if category=='danger' else ('success' if category=='success' else 'warning') }}" role="alert">
+                {{ message|safe }}
+              </div>
             {% endfor %}
           {% endif %}
         {% endwith %}
 
-        <form method="POST" action="/despachar_guias">
-            <div class="mb-3">
-                <label for="mensajero" class="form-label">Selecciona el mensajero:</label>
-                <select name="mensajero" id="mensajero" class="form-select" required>
-                    {% for mensajero in mensajeros %}
-                        <option value="{{ mensajero }}">{{ mensajero }}</option>
-                    {% endfor %}
-                </select>
-            </div>
+        <form method="post">
+            <label for="mensajero">Seleccione Mensajero</label>
+            <select name="mensajero" id="mensajero" required>
+                <option value="" disabled selected>Seleccione un mensajero</option>
+                {% for m in mensajeros %}
+                <option value="{{ m.nombre }}">{{ m.nombre }} (Zona: {{ m.zona }})</option>
+                {% endfor %}
+            </select>
 
-            <div class="mb-3">
-                <label for="guias" class="form-label">Números de Guía (uno por línea):</label>
-                <textarea name="guias" id="guias" class="form-control" rows="10" required></textarea>
-            </div>
+            <label for="guias">Guías (una por línea, escaneo con lector)</label>
+            <textarea name="guias" id="guias" rows="8" placeholder="Ejemplo:&#10;1001&#10;1002&#10;1003" required></textarea>
+            <small>Escanee o pegue una lista de números de guía, uno por línea.</small>
 
-            <button type="submit" class="btn btn-success">Despachar</button>
-            <a href="/" class="btn btn-secondary">Volver al inicio</a>
+            <button type="submit">Despachar</button>
         </form>
+
+        <a href="{{ url_for('index') }}" class="link-home">← Volver al Inicio</a>
     </div>
 </body>
 </html>
