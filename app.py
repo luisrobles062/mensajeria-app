@@ -8,26 +8,79 @@ import base64
 from datetime import datetime
 import os
 
-# ----------------- CONFIGURACIÓN APP -----------------
+# ----------------- CONFIG -----------------
 app = Flask(__name__)
-app.secret_key = "clave_secreta_segura"
+app.secret_key = os.environ.get("SECRET_KEY", "cambia_esto_en_produccion")
 
-# ----------------- VARIABLES EN MEMORIA -----------------
-zonas = []  # [{'nombre': 'Zona 1', 'tarifa': 250}]
-mensajeros = []  # [{'nombre': 'Pedro', 'zona': 'Zona 1'}]
-guias_cargadas = pd.DataFrame()
-despachos = []
-recepciones = []
+# DATABASE: prefer env var DATABASE_URL, sino fallback a SQLite local (data/app.db)
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if DATABASE_URL:
+    # Si la URL viene con channel_binding (Neon) y da problemas, quítalo en la variable de entorno.
+    app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
+else:
+    os.makedirs("data", exist_ok=True)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///data/app.db"
+
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+from flask_sqlalchemy import SQLAlchemy
+db = SQLAlchemy(app)
+
+# ----------------- MODELS -----------------
+class Zona(db.Model):
+    __tablename__ = "zonas"
+    nombre = db.Column(db.String(100), primary_key=True)
+    tarifa = db.Column(db.Float, nullable=False)
+
+class Mensajero(db.Model):
+    __tablename__ = "mensajeros"
+    nombre = db.Column(db.String(100), primary_key=True)
+    zona = db.Column(db.String(100), db.ForeignKey("zonas.nombre"), nullable=False)
+    zona_rel = db.relationship("Zona", backref="mensajeros")
+
+class Guia(db.Model):
+    __tablename__ = "guias"
+    id = db.Column(db.Integer, primary_key=True)
+    remitente = db.Column(db.String(255), nullable=False)
+    numero_guia = db.Column(db.String(255), nullable=False, unique=True)
+    destinatario = db.Column(db.String(255), nullable=False)
+    direccion = db.Column(db.String(255), nullable=False)
+    ciudad = db.Column(db.String(255), nullable=False)
+
+class Despacho(db.Model):
+    __tablename__ = "despachos"
+    id = db.Column(db.Integer, primary_key=True)
+    numero_guia = db.Column(db.String(255), db.ForeignKey("guias.numero_guia"), nullable=False)
+    mensajero = db.Column(db.String(100), db.ForeignKey("mensajeros.nombre"), nullable=False)
+    zona = db.Column(db.String(100), db.ForeignKey("zonas.nombre"), nullable=False)
+    fecha = db.Column(db.DateTime, default=datetime.utcnow)
+
+class Recepcion(db.Model):
+    __tablename__ = "recepciones"
+    id = db.Column(db.Integer, primary_key=True)
+    numero_guia = db.Column(db.String(255), db.ForeignKey("guias.numero_guia"), nullable=False)
+    tipo = db.Column(db.String(20), nullable=False)  # ENTREGA / DEVUELTA
+    motivo = db.Column(db.String(255))
+    fecha = db.Column(db.DateTime, default=datetime.utcnow)
+
+class Recogida(db.Model):
+    __tablename__ = "recogidas"
+    id = db.Column(db.Integer, primary_key=True)
+    numero_interno = db.Column(db.String(100))
+    fecha = db.Column(db.Date)
+    observaciones = db.Column(db.String(500))
+
 
 # ----------------- UTIL -----------------
 def safe_commit():
     try:
-        # Aquí debería ir commit a BD si usas SQLAlchemy, pero en esta versión usa variables en memoria
+        db.session.commit()
         return None
     except Exception as e:
+        db.session.rollback()
         return str(e)
 
 def lista_guias_str_to_list(texto):
+    """Convierte entrada multi-línea (scanner) en lista limpia."""
     if not texto:
         return []
     return [line.strip() for line in texto.splitlines() if line.strip()]
@@ -44,19 +97,35 @@ def cargar_base():
         archivo = request.files.get("archivo_excel")
         if not archivo:
             flash("Selecciona un archivo Excel (.xlsx).", "danger")
-            return redirect("/cargar_base")
+            return redirect(url_for("cargar_base"))
         try:
             df = pd.read_excel(archivo)
             required = {"remitente", "numero_guia", "destinatario", "direccion", "ciudad"}
             if not required.issubset(set(df.columns)):
                 flash(f"El archivo debe contener columnas: {', '.join(required)}", "danger")
-                return redirect("/cargar_base")
-            global guias_cargadas
-            guias_cargadas = df
-            flash(f"Archivo cargado con {len(df)} registros.", "success")
+                return redirect(url_for("cargar_base"))
+
+            added = 0
+            for _, row in df.iterrows():
+                num = str(row["numero_guia"]).strip()
+                if not Guia.query.filter_by(numero_guia=num).first():
+                    guia = Guia(
+                        remitente=str(row["remitente"]),
+                        numero_guia=num,
+                        destinatario=str(row["destinatario"]),
+                        direccion=str(row["direccion"]),
+                        ciudad=str(row["ciudad"])
+                    )
+                    db.session.add(guia)
+                    added += 1
+            err = safe_commit()
+            if err:
+                flash(f"Error al guardar guías: {err}", "danger")
+            else:
+                flash(f"{added} guías añadidas correctamente.", "success")
         except Exception as e:
             flash(f"Error procesando archivo: {e}", "danger")
-        return redirect("/cargar_base")
+        return redirect(url_for("cargar_base"))
     return render_template("cargar_base.html")
 
 # -------- REGISTRAR ZONA --------
@@ -67,77 +136,100 @@ def registrar_zona():
         tarifa = request.form.get("tarifa", "").strip()
         if not nombre or not tarifa:
             flash("Completa todos los campos.", "danger")
-            return redirect("/registrar_zona")
+            return redirect(url_for("registrar_zona"))
         try:
             tarifa_f = float(tarifa)
         except ValueError:
             flash("Tarifa inválida.", "danger")
-            return redirect("/registrar_zona")
-        if any(z["nombre"] == nombre for z in zonas):
+            return redirect(url_for("registrar_zona"))
+
+        if Zona.query.get(nombre):
             flash("La zona ya existe.", "warning")
         else:
-            zonas.append({"nombre": nombre, "tarifa": tarifa_f})
-            flash("Zona registrada.", "success")
-        return redirect("/registrar_zona")
+            db.session.add(Zona(nombre=nombre, tarifa=tarifa_f))
+            err = safe_commit()
+            if err:
+                flash(f"Error guardando zona: {err}", "danger")
+            else:
+                flash("Zona registrada.", "success")
+        return redirect(url_for("registrar_zona"))
+
+    zonas = Zona.query.order_by(Zona.nombre).all()
     return render_template("registrar_zona.html", zonas=zonas)
 
 # -------- REGISTRAR MENSAJERO --------
 @app.route("/registrar_mensajero", methods=["GET", "POST"])
 def registrar_mensajero():
+    zonas = Zona.query.order_by(Zona.nombre).all()
     if request.method == "POST":
         nombre = request.form.get("nombre", "").strip()
         zona_nombre = request.form.get("zona", "").strip()
         if not nombre or not zona_nombre:
             flash("Completa todos los campos.", "danger")
-            return redirect("/registrar_mensajero")
-        if not any(z["nombre"] == zona_nombre for z in zonas):
+            return redirect(url_for("registrar_mensajero"))
+
+        if not Zona.query.get(zona_nombre):
             flash("Zona no encontrada.", "danger")
-            return redirect("/registrar_mensajero")
-        if any(m["nombre"] == nombre for m in mensajeros):
+            return redirect(url_for("registrar_mensajero"))
+
+        if Mensajero.query.get(nombre):
             flash("El mensajero ya existe.", "warning")
         else:
-            mensajeros.append({"nombre": nombre, "zona": zona_nombre})
-            flash("Mensajero registrado.", "success")
-        return redirect("/registrar_mensajero")
+            db.session.add(Mensajero(nombre=nombre, zona=zona_nombre))
+            err = safe_commit()
+            if err:
+                flash(f"Error guardando mensajero: {err}", "danger")
+            else:
+                flash("Mensajero registrado.", "success")
+        return redirect(url_for("registrar_mensajero"))
+    mensajeros = Mensajero.query.order_by(Mensajero.nombre).all()
     return render_template("registrar_mensajero.html", zonas=zonas, mensajeros=mensajeros)
 
 # -------- DESPACHO MASIVO (scanner lines) --------
 @app.route("/despachar_guias", methods=["GET", "POST"])
 def despachar_guias():
+    mensajeros = Mensajero.query.order_by(Mensajero.nombre).all()
     if request.method == "POST":
         mensajero_nombre = request.form.get("mensajero")
         guias_texto = request.form.get("guias", "")
         guias_list = lista_guias_str_to_list(guias_texto)
-        mensajero = next((m for m in mensajeros if m["nombre"] == mensajero_nombre), None)
+        mensajero = Mensajero.query.get(mensajero_nombre)
         if not mensajero:
             flash("Mensajero no encontrado.", "danger")
-            return redirect("/despachar_guias")
+            return redirect(url_for("despachar_guias"))
         errores = []
         exito = []
         for numero in guias_list:
             numero = str(numero).strip()
-            if guias_cargadas.empty or numero not in guias_cargadas["numero_guia"].astype(str).values:
+            guia = Guia.query.filter_by(numero_guia=numero).first()
+            if not guia:
                 errores.append(f"Guía {numero} no existe (FALTANTE)")
                 continue
-            if any(d["numero_guia"] == numero for d in despachos):
-                errores.append(f"Guía {numero} ya fue despachada")
+            despacho_existente = Despacho.query.filter_by(numero_guia=numero).first()
+            recepcion_existente = Recepcion.query.filter_by(numero_guia=numero).first()
+            if recepcion_existente:
+                errores.append(f"Guía {numero} ya fue {recepcion_existente.tipo}")
                 continue
-            if any(r["numero_guia"] == numero for r in recepciones):
-                errores.append(f"Guía {numero} ya fue recepcionada")
+            if despacho_existente:
+                errores.append(f"Guía {numero} ya fue despachada a {despacho_existente.mensajero}")
                 continue
-            despacho = {"numero_guia": numero, "mensajero": mensajero_nombre, "zona": mensajero["zona"], "fecha": datetime.utcnow()}
-            despachos.append(despacho)
+            nuevo = Despacho(numero_guia=numero, mensajero=mensajero_nombre, zona=mensajero.zona, fecha=datetime.utcnow())
+            db.session.add(nuevo)
             exito.append(f"Guía {numero} despachada a {mensajero_nombre}")
+        err = safe_commit()
+        if err:
+            flash(f"Error en base de datos: {err}", "danger")
         if errores:
             flash("Errores:<br>" + "<br>".join(errores), "danger")
         if exito:
             flash("Despachos exitosos:<br>" + "<br>".join(exito), "success")
-        return redirect("/ver_despacho")
+        return redirect(url_for("ver_despacho"))
     return render_template("despachar_guias.html", mensajeros=mensajeros)
 
 # -------- VER DESPACHO --------
 @app.route("/ver_despacho")
 def ver_despacho():
+    despachos = Despacho.query.order_by(Despacho.fecha.desc()).all()
     return render_template("ver_despacho.html", despachos=despachos)
 
 # -------- REGISTRAR RECEPCION --------
@@ -149,23 +241,29 @@ def registrar_recepcion():
         motivo = request.form.get("motivo", "").strip()
         if not numero:
             flash("Ingrese número de guía.", "danger")
-            return redirect("/registrar_recepcion")
-        if guias_cargadas.empty or numero not in guias_cargadas["numero_guia"].astype(str).values:
+            return redirect(url_for("registrar_recepcion"))
+        guia = Guia.query.filter_by(numero_guia=numero).first()
+        if not guia:
             flash("Número de guía no existe en la base (FALTANTE).", "danger")
-            return redirect("/registrar_recepcion")
-        if not any(d["numero_guia"] == numero for d in despachos):
+            return redirect(url_for("registrar_recepcion"))
+        despacho = Despacho.query.filter_by(numero_guia=numero).first()
+        if not despacho:
             flash("La guía no ha sido despachada aún.", "warning")
-            return redirect("/registrar_recepcion")
-        if any(r["numero_guia"] == numero for r in recepciones):
+            return redirect(url_for("registrar_recepcion"))
+        if Recepcion.query.filter_by(numero_guia=numero).first():
             flash("La recepción para esta guía ya está registrada.", "warning")
-            return redirect("/registrar_recepcion")
-        recepcion = {"numero_guia": numero, "tipo": tipo, "motivo": motivo if tipo == "DEVUELTA" else "", "fecha": datetime.utcnow()}
-        recepciones.append(recepcion)
-        flash(f"Recepción de guía {numero} registrada como {tipo}.", "success")
-        return redirect("/registrar_recepcion")
+            return redirect(url_for("registrar_recepcion"))
+        recep = Recepcion(numero_guia=numero, tipo=tipo, motivo=(motivo if tipo == "DEVUELTA" else ""), fecha=datetime.utcnow())
+        db.session.add(recep)
+        err = safe_commit()
+        if err:
+            flash(f"Error guardando recepción: {err}", "danger")
+        else:
+            flash(f"Recepción de guía {numero} registrada como {tipo}.", "success")
+        return redirect(url_for("registrar_recepcion"))
     return render_template("registrar_recepcion.html")
 
-# -------- CONSULTAR ESTADO (multi) --------
+# -------- CONSULTAR ESTADO (multi) + EXPORT to EXCEL --------
 @app.route("/consultar_estado", methods=["GET", "POST"])
 def consultar_estado():
     resultados = []
@@ -178,7 +276,7 @@ def consultar_estado():
             motivo = ""
             mensajero = ""
             zona = ""
-            fecha_despacho =_
+            fecha_despacho = ""
             gestion = ""
             guia = Guia.query.filter_by(numero_guia=numero).first()
             recepcion = Recepcion.query.filter_by(numero_guia=numero).first()
@@ -303,55 +401,46 @@ def registrar_recogida():
         except ValueError:
             flash("Formato de fecha inválido. Use YYYY-MM-DD.", "danger")
             return redirect(url_for("registrar_recogida"))
-        rec = Recogida(numero_interno=numero_interno, fecha=f, observaciones=observaciones)
-        db.session.add(rec)
+        recogida = Recogida(numero_interno=numero_interno, fecha=f, observaciones=observaciones)
+        db.session.add(recogida)
         err = safe_commit()
         if err:
             flash(f"Error guardando recogida: {err}", "danger")
         else:
             flash("Recogida registrada.", "success")
-        return redirect(url_for("ver_recogidas"))
-    return render_template("registrar_recogida.html")
-
-@app.route("/ver_recogidas")
-def ver_recogidas():
-    lista = Recogida.query.order_by(Recogida.fecha.desc()).all()
-    return render_template("ver_recogidas.html", recogidas=lista)
+        return redirect(url_for("registrar_recogida"))
+    recogidas = Recogida.query.order_by(Recogida.fecha.desc()).all()
+    return render_template("registrar_recogida.html", recogidas=recogidas)
 
 @app.route("/editar_recogida/<int:id>", methods=["GET", "POST"])
 def editar_recogida(id):
-    rec = Recogida.query.get_or_404(id)
+    recogida = Recogida.query.get_or_404(id)
     if request.method == "POST":
-        rec.numero_interno = request.form.get("numero_interno", rec.numero_interno)
-        fecha_str = request.form.get("fecha", rec.fecha.strftime("%Y-%m-%d"))
-        try:
-            rec.fecha = datetime.strptime(fecha_str, "%Y-%m-%d").date()
-        except ValueError:
-            flash("Fecha inválida.", "danger")
+        numero_interno = request.form.get("numero_interno", "").strip()
+        fecha_str = request.form.get("fecha", "").strip()
+        observaciones = request.form.get("observaciones", "").strip()
+        if not fecha_str:
+            flash("Fecha obligatoria.", "danger")
             return redirect(url_for("editar_recogida", id=id))
-        rec.observaciones = request.form.get("observaciones", rec.observaciones)
+        try:
+            f = datetime.strptime(fecha_str, "%Y-%m-%d").date()
+        except ValueError:
+            flash("Formato de fecha inválido.", "danger")
+            return redirect(url_for("editar_recogida", id=id))
+        recogida.numero_interno = numero_interno
+        recogida.fecha = f
+        recogida.observaciones = observaciones
         err = safe_commit()
         if err:
-            flash(f"Error actualizando: {err}", "danger")
+            flash(f"Error actualizando recogida: {err}", "danger")
         else:
             flash("Recogida actualizada.", "success")
-        return redirect(url_for("ver_recogidas"))
-    return render_template("editar_recogida.html", recogida=rec)
+        return redirect(url_for("registrar_recogida"))
+    return render_template("editar_recogida.html", recogida=recogida)
 
-# -------- API auxiliar para comprobar si número existe (útil en JS) --------
-@app.route("/api/existe_guia/<numero>")
-def api_existe_guia(numero):
-    existe = Guia.query.filter_by(numero_guia=numero).first() is not None
-    return jsonify({"existe": existe})
 
-# ----------------- START -----------------
 if __name__ == "__main__":
-    # Crear tablas si no existen (protegido)
+    # Crear tablas si no existen
     with app.app_context():
-        try:
-            db.create_all()
-            print("Tablas creadas/verificadas.")
-        except Exception as e:
-            print("No se pudieron crear todas las tablas automáticamente:", e)
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+        db.create_all()
+    app.run(debug=True)
