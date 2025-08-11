@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, flash, send_file, url_for, jsonify
+from flask import Flask, render_template, request, redirect, send_file, flash, url_for, jsonify
 from flask_sqlalchemy import SQLAlchemy
 import pandas as pd
 import io
@@ -9,20 +9,17 @@ import base64
 from datetime import datetime
 import os
 
+# ----------------- CONFIGURACIÓN APP -----------------
 app = Flask(__name__)
 app.secret_key = "clave_secreta_segura"
 
-# Configura aquí tu conexión a Neon/PostgreSQL
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
-    "DATABASE_URL",
-    "postgresql://usuario:contraseña@host:puerto/dbname"
-)
+# Configurar SQLAlchemy con la URL de Neon desde variable entorno DATABASE_URL
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', '')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 
-# -------- MODELOS --------
-
+# ----------------- MODELOS -----------------
 class Zona(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(100), unique=True, nullable=False)
@@ -31,44 +28,40 @@ class Zona(db.Model):
 class Mensajero(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(100), unique=True, nullable=False)
-    zona_nombre = db.Column(db.String(100), db.ForeignKey('zona.nombre'), nullable=False)
-    zona = db.relationship('Zona', backref='mensajeros', lazy=True)
+    zona_id = db.Column(db.Integer, db.ForeignKey('zona.id'), nullable=False)
+    zona = db.relationship('Zona')
 
 class Guia(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     remitente = db.Column(db.String(200))
     numero_guia = db.Column(db.String(100), unique=True, nullable=False)
     destinatario = db.Column(db.String(200))
-    direccion = db.Column(db.String(200))
+    direccion = db.Column(db.String(300))
     ciudad = db.Column(db.String(100))
 
 class Despacho(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     numero_guia = db.Column(db.String(100), db.ForeignKey('guia.numero_guia'), nullable=False)
-    mensajero = db.Column(db.String(100), nullable=False)
-    zona = db.Column(db.String(100), nullable=False)
+    mensajero_id = db.Column(db.Integer, db.ForeignKey('mensajero.id'), nullable=False)
     fecha = db.Column(db.DateTime, default=datetime.utcnow)
+    guia = db.relationship('Guia')
+    mensajero = db.relationship('Mensajero')
 
 class Recepcion(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     numero_guia = db.Column(db.String(100), db.ForeignKey('guia.numero_guia'), nullable=False)
     tipo = db.Column(db.String(20))  # ENTREGA o DEVUELTA
-    motivo = db.Column(db.String(100), default="")
+    motivo = db.Column(db.String(100), nullable=True)
     fecha = db.Column(db.DateTime, default=datetime.utcnow)
+    guia = db.relationship('Guia')
 
 class Recogida(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     numero_interno = db.Column(db.String(100))
-    fecha = db.Column(db.Date, nullable=False)
+    fecha = db.Column(db.Date)
     observaciones = db.Column(db.Text)
 
-# -------- UTILIDADES --------
-
-def lista_guias_str_to_list(texto):
-    if not texto:
-        return []
-    return [line.strip() for line in texto.splitlines() if line.strip()]
-
+# ----------------- UTIL -----------------
 def safe_commit():
     try:
         db.session.commit()
@@ -77,11 +70,24 @@ def safe_commit():
         db.session.rollback()
         return str(e)
 
-# -------- RUTAS --------
+def lista_guias_str_to_list(texto):
+    if not texto:
+        return []
+    return [line.strip() for line in texto.splitlines() if line.strip()]
 
+# ----------------- ROUTES -----------------
 @app.route("/")
 def index():
     return render_template("index.html")
+
+# Ruta para probar conexión con DB Neon
+@app.route('/testdb')
+def testdb():
+    try:
+        result = db.session.execute("SELECT 1").scalar()
+        return f"Conexión exitosa: {result}"
+    except Exception as e:
+        return f"Error en conexión a la base de datos: {e}"
 
 # Cargar base de guías desde Excel
 @app.route("/cargar_base", methods=["GET", "POST"])
@@ -97,23 +103,22 @@ def cargar_base():
             if not required.issubset(set(df.columns)):
                 flash(f"El archivo debe contener columnas: {', '.join(required)}", "danger")
                 return redirect("/cargar_base")
-            count = 0
+            # Limpiar tabla Guia antes de insertar nuevos registros
+            Guia.query.delete()
             for _, row in df.iterrows():
-                if not Guia.query.filter_by(numero_guia=str(row['numero_guia'])).first():
-                    g = Guia(
-                        remitente=row['remitente'],
-                        numero_guia=str(row['numero_guia']),
-                        destinatario=row['destinatario'],
-                        direccion=row['direccion'],
-                        ciudad=row['ciudad']
-                    )
-                    db.session.add(g)
-                    count += 1
+                guia = Guia(
+                    remitente=row["remitente"],
+                    numero_guia=str(row["numero_guia"]),
+                    destinatario=row["destinatario"],
+                    direccion=row["direccion"],
+                    ciudad=row["ciudad"]
+                )
+                db.session.add(guia)
             err = safe_commit()
             if err:
-                flash(f"Error guardando guías: {err}", "danger")
+                flash(f"Error al guardar guías: {err}", "danger")
             else:
-                flash(f"{count} guías cargadas exitosamente.", "success")
+                flash(f"Archivo cargado con {len(df)} registros.", "success")
         except Exception as e:
             flash(f"Error procesando archivo: {e}", "danger")
         return redirect("/cargar_base")
@@ -136,8 +141,8 @@ def registrar_zona():
         if Zona.query.filter_by(nombre=nombre).first():
             flash("La zona ya existe.", "warning")
         else:
-            nueva = Zona(nombre=nombre, tarifa=tarifa_f)
-            db.session.add(nueva)
+            zona = Zona(nombre=nombre, tarifa=tarifa_f)
+            db.session.add(zona)
             err = safe_commit()
             if err:
                 flash(f"Error guardando zona: {err}", "danger")
@@ -153,17 +158,15 @@ def registrar_mensajero():
     if request.method == "POST":
         nombre = request.form.get("nombre", "").strip()
         zona_nombre = request.form.get("zona", "").strip()
-        if not nombre or not zona_nombre:
-            flash("Completa todos los campos.", "danger")
-            return redirect("/registrar_mensajero")
-        if not Zona.query.filter_by(nombre=zona_nombre).first():
-            flash("Zona no encontrada.", "danger")
+        zona = Zona.query.filter_by(nombre=zona_nombre).first()
+        if not nombre or not zona:
+            flash("Completa todos los campos y selecciona una zona válida.", "danger")
             return redirect("/registrar_mensajero")
         if Mensajero.query.filter_by(nombre=nombre).first():
             flash("El mensajero ya existe.", "warning")
         else:
-            nuevo = Mensajero(nombre=nombre, zona_nombre=zona_nombre)
-            db.session.add(nuevo)
+            mensajero = Mensajero(nombre=nombre, zona=zona)
+            db.session.add(mensajero)
             err = safe_commit()
             if err:
                 flash(f"Error guardando mensajero: {err}", "danger")
@@ -174,7 +177,7 @@ def registrar_mensajero():
     mensajeros = Mensajero.query.all()
     return render_template("registrar_mensajero.html", zonas=zonas, mensajeros=mensajeros)
 
-# Despachar guías masivamente (con validaciones)
+# Despachar guías (masivo)
 @app.route("/despachar_guias", methods=["GET", "POST"])
 def despachar_guias():
     if request.method == "POST":
@@ -199,12 +202,10 @@ def despachar_guias():
             if Recepcion.query.filter_by(numero_guia=numero).first():
                 errores.append(f"Guía {numero} ya fue recepcionada")
                 continue
-            despacho = Despacho(numero_guia=numero, mensajero=mensajero_nombre, zona=mensajero.zona_nombre, fecha=datetime.utcnow())
+            despacho = Despacho(numero_guia=numero, mensajero=mensajero)
             db.session.add(despacho)
             exito.append(f"Guía {numero} despachada a {mensajero_nombre}")
         err = safe_commit()
-        if err:
-            flash(f"Error al despachar: {err}", "danger")
         if errores:
             flash("Errores:<br>" + "<br>".join(errores), "danger")
         if exito:
@@ -213,7 +214,7 @@ def despachar_guias():
     mensajeros = Mensajero.query.all()
     return render_template("despachar_guias.html", mensajeros=mensajeros)
 
-# Ver despacho (lista)
+# Ver despacho
 @app.route("/ver_despacho")
 def ver_despacho():
     despachos = Despacho.query.order_by(Despacho.fecha.desc()).all()
@@ -226,10 +227,10 @@ def registrar_recepcion():
         numero = request.form.get("numero_guia", "").strip()
         tipo = request.form.get("estado")
         motivo = request.form.get("motivo", "").strip()
+        guia = Guia.query.filter_by(numero_guia=numero).first()
         if not numero:
             flash("Ingrese número de guía.", "danger")
             return redirect("/registrar_recepcion")
-        guia = Guia.query.filter_by(numero_guia=numero).first()
         if not guia:
             flash("Número de guía no existe en la base (FALTANTE).", "danger")
             return redirect("/registrar_recepcion")
@@ -239,7 +240,7 @@ def registrar_recepcion():
         if Recepcion.query.filter_by(numero_guia=numero).first():
             flash("La recepción para esta guía ya está registrada.", "warning")
             return redirect("/registrar_recepcion")
-        recepcion = Recepcion(numero_guia=numero, tipo=tipo, motivo=motivo if tipo == "DEVUELTA" else "", fecha=datetime.utcnow())
+        recepcion = Recepcion(numero_guia=numero, tipo=tipo, motivo=motivo if tipo == "DEVUELTA" else "")
         db.session.add(recepcion)
         err = safe_commit()
         if err:
@@ -249,7 +250,7 @@ def registrar_recepcion():
         return redirect("/registrar_recepcion")
     return render_template("registrar_recepcion.html")
 
-# Consultar estado (varias guías)
+# Consultar estado múltiples guías
 @app.route("/consultar_estado", methods=["GET", "POST"])
 def consultar_estado():
     resultados = []
@@ -274,13 +275,13 @@ def consultar_estado():
                 motivo = recepcion.motivo or ""
                 gestion = f"{recepcion.tipo}" + (f" - {motivo}" if motivo else "")
                 if despacho:
-                    mensajero = despacho.mensajero
-                    zona = despacho.zona
+                    mensajero = despacho.mensajero.nombre
+                    zona = despacho.mensajero.zona.nombre
                     fecha_despacho = despacho.fecha
             elif despacho:
                 estado = "DESPACHADA"
-                mensajero = despacho.mensajero
-                zona = despacho.zona
+                mensajero = despacho.mensajero.nombre
+                zona = despacho.mensajero.zona.nombre
                 fecha_despacho = despacho.fecha
             resultados.append({
                 "numero_guia": numero,
@@ -291,6 +292,7 @@ def consultar_estado():
                 "fecha_despacho": fecha_despacho,
                 "gestion": gestion
             })
+        # Exportar a Excel si pidió
         if request.form.get("exportar") == "1":
             df = pd.DataFrame(resultados)
             output = io.BytesIO()
@@ -298,12 +300,27 @@ def consultar_estado():
                 df.to_excel(writer, index=False, sheet_name="estado")
             output.seek(0)
             ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-            return send_file(output, download_name=f"consulta_estado_{ts}.xlsx", as_attachment=True,
-                             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            return send_file(output, download_name=f"consulta_estado_{ts}.xlsx", as_attachment=True, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         return render_template("consultar_estado.html", resultados=resultados)
     return render_template("consultar_estado.html", resultados=None)
 
-# Liquidación con gráfico y export
+# Verificación de correo entrante (validar guía uno por uno)
+@app.route("/verificacion_entrada", methods=["GET", "POST"])
+def verificacion_entrada():
+    if request.method == "POST":
+        numero = request.form.get("numero_guia", "").strip()
+        if not numero:
+            flash("Ingrese número de guía.", "danger")
+            return redirect(url_for("verificacion_entrada"))
+        guia = Guia.query.filter_by(numero_guia=numero).first()
+        if not guia:
+            flash("FALTANTE: la guía no existe en la base.", "danger")
+            return redirect(url_for("verificacion_entrada"))
+        flash(f"Guía {numero} validada correctamente.", "success")
+        return redirect(url_for("verificacion_entrada"))
+    return render_template("verificacion_entrada.html")
+
+# Liquidación por rango de fechas, exportación y gráfico
 @app.route("/liquidacion", methods=["GET", "POST"])
 def liquidacion():
     liquidaciones = None
@@ -317,13 +334,16 @@ def liquidacion():
             ff = datetime.strptime(fecha_fin, "%Y-%m-%d")
             from sqlalchemy import func
             q = db.session.query(
-                Despacho.mensajero,
+                Despacho.mensajero_id,
+                Mensajero.nombre,
+                Zona.nombre.label("zona_nombre"),
                 func.count(Despacho.id).label("cantidad"),
                 func.sum(Zona.tarifa).label("total")
-            ).join(Zona, Despacho.zona == Zona.nombre).filter(
+            ).join(Mensajero, Despacho.mensajero_id == Mensajero.id).join(Zona, Mensajero.zona_id == Zona.id).filter(
                 Despacho.fecha.between(fi, ff)
-            ).group_by(Despacho.mensajero).all()
-            liquidaciones = [{"mensajero": r.mensajero, "cantidad": r.cantidad, "total": float(r.total or 0)} for r in q]
+            ).group_by(Despacho.mensajero_id, Mensajero.nombre, Zona.nombre).all()
+
+            liquidaciones = [{"mensajero": r.nombre, "zona": r.zona_nombre, "cantidad": r.cantidad, "total": float(r.total or 0)} for r in q]
 
             if liquidaciones:
                 names = [l["mensajero"] for l in liquidaciones]
@@ -341,6 +361,7 @@ def liquidacion():
         except Exception as e:
             flash(f"Error al calcular liquidación: {e}", "danger")
 
+        # Exportar a Excel si pidió
         if request.form.get("exportar") == "1" and liquidaciones:
             df = pd.DataFrame(liquidaciones)
             out = io.BytesIO()
@@ -348,11 +369,9 @@ def liquidacion():
                 df.to_excel(writer, index=False, sheet_name="liquidacion")
             out.seek(0)
             ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-            return send_file(out, download_name=f"liquidacion_{ts}.xlsx", as_attachment=True,
-                             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            return send_file(out, download_name=f"liquidacion_{ts}.xlsx", as_attachment=True, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-    return render_template("liquidacion.html", liquidaciones=liquidaciones, fecha_inicio=fecha_inicio,
-                           fecha_fin=fecha_fin, chart_png=chart_png)
+    return render_template("liquidacion.html", liquidaciones=liquidaciones, fecha_inicio=fecha_inicio, fecha_fin=fecha_fin, chart_png=chart_png)
 
 # Registrar recogida
 @app.route("/registrar_recogida", methods=["GET", "POST"])
@@ -406,16 +425,13 @@ def editar_recogida(id):
         return redirect(url_for("ver_recogidas"))
     return render_template("editar_recogida.html", recogida=rec)
 
-# API para validar existencia guía
-@app.route("/api/existe_guia/<numero>")
-def api_existe_guia(numero):
-    existe = Guia.query.filter_by(numero_guia=numero).first() is not None
-    return jsonify({"existe": existe})
-
-# Iniciar app y crear tablas si no existen
+# ----------------- INICIO -----------------
 if __name__ == "__main__":
     with app.app_context():
-        db.create_all()
-        print("Tablas creadas/verificadas.")
+        try:
+            db.create_all()
+            print("Tablas creadas/verificadas.")
+        except Exception as e:
+            print("Error creando tablas:", e)
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
