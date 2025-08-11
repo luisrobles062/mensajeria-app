@@ -1,45 +1,145 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <title>Consultar Estado de Guía</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+    <meta charset="UTF-8" />
+    <title>CERTISERVI - Consultar Estado</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <style>
+        body {
+            background-color: #1e293b;
+            color: #f1f5f9;
+            font-family: 'Montserrat', sans-serif;
+            padding: 40px;
+        }
+        .container {
+            max-width: 850px;
+            background: #334155;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 0 15px rgba(14,165,233,0.7);
+        }
+        h2 {
+            color: #38bdf8;
+            margin-bottom: 25px;
+            font-weight: 700;
+        }
+        label {
+            font-weight: 600;
+        }
+        textarea {
+            background: #475569;
+            border: none;
+            border-radius: 8px;
+            padding: 10px;
+            color: #f1f5f9;
+            width: 100%;
+            font-family: monospace, monospace;
+            font-size: 1rem;
+            resize: vertical;
+            margin-bottom: 15px;
+        }
+        button {
+            background-color: #0ea5e9;
+            border: none;
+            padding: 12px 25px;
+            color: white;
+            font-weight: 700;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #0284c7;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 30px;
+            font-size: 0.95rem;
+        }
+        th, td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #475569;
+            text-align: left;
+        }
+        th {
+            background-color: #0ea5e9;
+            color: white;
+            font-weight: 700;
+            border-radius: 6px 6px 0 0;
+        }
+        tr:hover {
+            background-color: #475569;
+        }
+        .empty {
+            text-align: center;
+            padding: 25px;
+            color: #94a3b8;
+            font-style: italic;
+        }
+        a.link-home {
+            margin-top: 20px;
+            display: inline-block;
+            color: #94a3b8;
+            text-decoration: none;
+        }
+        a.link-home:hover {
+            color: #0ea5e9;
+        }
+        .btn-group {
+            margin-top: 10px;
+        }
+    </style>
 </head>
-<body class="bg-light">
-    <div class="container mt-5">
-        <h1 class="mb-4">🔍 Consultar Estado de Guía</h1>
+<body>
+    <div class="container">
+        <h2>Consultar Estado de Guías</h2>
 
-        <form method="POST" action="/consultar_estado" class="mb-4">
-            <div class="mb-3">
-                <label for="numero_guia" class="form-label">Número de Guía:</label>
-                <input type="text" id="numero_guia" name="numero_guia" class="form-control" required>
+        <form method="post" id="consultaForm">
+            <label for="guias">Ingrese números de guía (uno por línea):</label>
+            <textarea name="guias" id="guias" rows="8" placeholder="Ejemplo:\n1001\n1002\n1003" required>{{ request.form.get('guias', '') }}</textarea>
+
+            <div class="btn-group">
+                <button type="submit" name="buscar" value="1">Consultar Estado</button>
+                <button type="submit" name="exportar" value="1" form="consultaForm">Exportar a Excel</button>
             </div>
-            <button type="submit" class="btn btn-primary">Consultar</button>
-            <a href="/" class="btn btn-secondary">Volver al inicio</a>
         </form>
 
-        {% if resultado %}
-            <div class="card">
-                <div class="card-header">
-                    Estado de la Guía {{ resultado.numero_guia if resultado.numero_guia else '' }}
-                </div>
-                <div class="card-body">
-                    <p><strong>Estado:</strong> {{ resultado.estado }}</p>
-                    {% if resultado.motivo %}
-                    <p><strong>Motivo:</strong> {{ resultado.motivo }}</p>
-                    {% endif %}
-                    {% if resultado.mensajero %}
-                    <p><strong>Mensajero:</strong> {{ resultado.mensajero }}</p>
-                    {% endif %}
-                    {% if resultado.zona %}
-                    <p><strong>Zona:</strong> {{ resultado.zona }}</p>
-                    {% endif %}
-                    {% if resultado.fecha %}
-                    <p><strong>Fecha:</strong> {{ resultado.fecha }}</p>
-                    {% endif %}
-                </div>
-            </div>
+        {% if resultados is not none %}
+            {% if resultados %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Número Guía</th>
+                            <th>Estado</th>
+                            <th>Motivo</th>
+                            <th>Mensajero</th>
+                            <th>Zona</th>
+                            <th>Fecha Despacho</th>
+                            <th>Gestión</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in resultados %}
+                        <tr>
+                            <td>{{ r.numero_guia }}</td>
+                            <td>{{ r.estado }}</td>
+                            <td>{{ r.motivo }}</td>
+                            <td>{{ r.mensajero }}</td>
+                            <td>{{ r.zona }}</td>
+                            <td>{{ r.fecha_despacho.strftime('%Y-%m-%d %H:%M:%S') if r.fecha_despacho else '' }}</td>
+                            <td>{{ r.gestion }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <p class="empty">No se encontraron resultados.</p>
+            {% endif %}
         {% endif %}
+
+        <a href="{{ url_for('index') }}" class="link-home">← Volver al Inicio</a>
     </div>
 </body>
 </html>
