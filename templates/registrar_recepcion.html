@@ -1,121 +1,44 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8" />
-    <title>CERTISERVI - Registrar Recepción</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
-    <style>
-        body {
-            background-color: #1e293b;
-            color: #f1f5f9;
-            font-family: 'Montserrat', sans-serif;
-            padding: 40px;
-        }
-        .container {
-            max-width: 480px;
-            background: #334155;
-            padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 0 15px rgba(14,165,233,0.7);
-        }
-        h2 {
-            color: #38bdf8;
-            margin-bottom: 25px;
-            font-weight: 700;
-        }
-        label {
-            font-weight: 600;
-        }
-        input[type="text"], select {
-            background: #475569;
-            border: none;
-            border-radius: 8px;
-            padding: 10px;
-            color: #f1f5f9;
-            width: 100%;
-            margin-bottom: 20px;
-            font-size: 1rem;
-        }
-        button {
-            background-color: #0ea5e9;
-            border: none;
-            padding: 12px 20px;
-            color: white;
-            font-weight: 700;
-            border-radius: 8px;
-            width: 100%;
-            cursor: pointer;
-            transition: background-color 0.3s ease;
-        }
-        button:hover {
-            background-color: #0284c7;
-        }
-        .alert {
-            margin-bottom: 20px;
-            font-weight: 600;
-        }
-        a.link-home {
-            margin-top: 15px;
-            display: inline-block;
-            color: #94a3b8;
-            text-decoration: none;
-        }
-        a.link-home:hover {
-            color: #0ea5e9;
-        }
-    </style>
-    <script>
-        function toggleMotivo() {
-            const tipo = document.getElementById('estado').value;
-            const motivoDiv = document.getElementById('motivo_div');
-            if (tipo === 'DEVUELTA') {
-                motivoDiv.style.display = 'block';
-            } else {
-                motivoDiv.style.display = 'none';
-            }
-        }
-        window.onload = toggleMotivo;
-    </script>
-</head>
-<body>
-    <div class="container">
-        <h2>Registrar Recepción</h2>
+{% extends "base.html" %}
+{% block title %}Registrar Recepción - CERTISERVI{% endblock %}
+{% block content %}
+<h2>Registrar Recepción de Guía</h2>
 
-        {% with messages = get_flashed_messages(with_categories=true) %}
-          {% if messages %}
-            {% for category, message in messages %}
-              <div class="alert alert-{{ 'danger' if category=='danger' else ('success' if category=='success' else 'warning') }}" role="alert">
-                {{ message|safe }}
-              </div>
-            {% endfor %}
-          {% endif %}
-        {% endwith %}
-
-        <form method="post">
-            <label for="numero_guia">Número de Guía</label>
-            <input type="text" name="numero_guia" id="numero_guia" placeholder="Ejemplo: 1001" required />
-
-            <label for="estado">Tipo de Recepción</label>
-            <select name="estado" id="estado" onchange="toggleMotivo()" required>
-                <option value="ENTREGA">ENTREGA</option>
-                <option value="DEVUELTA">DEVUELTA</option>
-            </select>
-
-            <div id="motivo_div" style="display:none;">
-                <label for="motivo">Motivo de Devolución</label>
-                <select name="motivo" id="motivo">
-                    <option value="INCORRECTA">INCORRECTA</option>
-                    <option value="INCOMPLETA">INCOMPLETA</option>
-                    <option value="REHUSADO">REHUSADO</option>
-                    <option value="CERRADO">CERRADO</option>
-                    <option value="TRASLADO">TRASLADO</option>
-                </select>
-            </div>
-
-            <button type="submit">Registrar</button>
-        </form>
-
-        <a href="{{ url_for('index') }}" class="link-home">← Volver al Inicio</a>
+<form action="/registrar_recepcion" method="POST" class="mt-4">
+    <div class="mb-3">
+        <label for="numero_guia" class="form-label">Número de Guía</label>
+        <input type="text" name="numero_guia" id="numero_guia" class="form-control" required>
     </div>
-</body>
-</html>
+    <div class="mb-3">
+        <label for="estado" class="form-label">Tipo de Evento</label>
+        <select name="estado" id="estado" class="form-select" required>
+            <option value="ENTREGADA">Entrega</option>
+            <option value="DEVUELTA">Devolución</option>
+        </select>
+    </div>
+    <div class="mb-3" id="motivo-container" style="display:none;">
+        <label for="motivo" class="form-label">Motivo de Devolución</label>
+        <select name="motivo" id="motivo" class="form-select">
+            <option value="">Seleccione motivo</option>
+            <option value="INCORRECTA">Incorrecta</option>
+            <option value="INCOMPLETA">Incompleta</option>
+            <option value="REHUSADO">Rehusado</option>
+            <option value="CERRADO">Cerrado</option>
+            <option value="TRASLADO">Traslado</option>
+        </select>
+    </div>
+    <button type="submit" class="btn btn-primary">Registrar Recepción</button>
+    <a href="/" class="btn btn-secondary ms-2">Volver al Inicio</a>
+</form>
+
+<script>
+document.getElementById("estado").addEventListener("change", function(){
+    const motivoCont = document.getElementById("motivo-container");
+    if(this.value === "DEVUELTA"){
+        motivoCont.style.display = "block";
+    } else {
+        motivoCont.style.display = "none";
+        document.getElementById("motivo").value = "";
+    }
+});
+</script>
+{% endblock %}
