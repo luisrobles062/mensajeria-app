@@ -1,21 +1,38 @@
-{% extends "base.html" %}
-{% block title %}Registrar Recogida - CERTISERVI{% endblock %}
-{% block content %}
-<h2>Registrar Recogida</h2>
-<form method="POST">
-    <div class="mb-3">
-        <label for="numero_interno" class="form-label">Número Interno</label>
-        <input type="text" class="form-control" id="numero_interno" name="numero_interno" required />
-    </div>
-    <div class="mb-3">
-        <label for="fecha" class="form-label">Fecha</label>
-        <input type="date" class="form-control" id="fecha" name="fecha" required />
-    </div>
-    <div class="mb-3">
-        <label for="observaciones" class="form-label">Observaciones</label>
-        <textarea class="form-control" id="observaciones" name="observaciones" rows="3"></textarea>
-    </div>
-    <button type="submit" class="btn btn-primary">Registrar Recogida</button>
-    <a href="{{ url_for('ver_recogidas') }}" class="btn btn-secondary ms-2">Ver Recogidas</a>
-</form>
-{% endblock %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <title>Registrar Recogida</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+</head>
+<body>
+<div class="container mt-4">
+    <h2>Registrar Recogida</h2>
+    <a href="{{ url_for('index') }}" class="btn btn-secondary mb-3">Volver al inicio</a>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{category}}">{{ message|safe }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <form method="post">
+        <div class="mb-3">
+            <label for="numero_guia" class="form-label">Número de Guía</label>
+            <input type="text" class="form-control" id="numero_guia" name="numero_guia" required>
+        </div>
+        <div class="mb-3">
+            <label for="fecha" class="form-label">Fecha</label>
+            <input type="date" class="form-control" id="fecha" name="fecha" required>
+        </div>
+        <div class="mb-3">
+            <label for="observaciones" class="form-label">Observaciones</label>
+            <textarea class="form-control" id="observaciones" name="observaciones" rows="3"></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary">Registrar Recogida</button>
+    </form>
+</div>
+</body>
+</html>
