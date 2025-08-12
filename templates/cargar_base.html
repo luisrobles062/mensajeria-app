@@ -2,27 +2,31 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8" />
-    <title>Cargar base de guías</title>
+    <title>Cargar Base de Guías</title>
 </head>
 <body>
-    <h1>Cargar base de guías desde Excel</h1>
+    <h1>Cargar Base de Guías (Excel)</h1>
+
     {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
+    {% if messages %}
         <ul>
-          {% for category, message in messages %}
+        {% for category, message in messages %}
             <li style="color: {% if category == 'error' %}red{% elif category == 'success' %}green{% else %}black{% endif %};">
-              {{ message }}
+                {{ message }}
             </li>
-          {% endfor %}
+        {% endfor %}
         </ul>
-      {% endif %}
+    {% endif %}
     {% endwith %}
 
-    <form method="POST" enctype="multipart/form-data">
-        <input type="file" name="archivo" accept=".xls,.xlsx" required />
+    <form method="POST" enctype="multipart/form-data" action="{{ url_for('cargar_base') }}">
+        <label for="archivo">Archivo Excel:</label>
+        <input type="file" name="archivo" id="archivo" required>
+        <br><br>
         <button type="submit">Cargar</button>
     </form>
 
-    <p><a href="{{ url_for('index') }}">Volver al inicio</a></p>
+    <br>
+    <a href="{{ url_for('index') }}">Volver al inicio</a>
 </body>
 </html>
