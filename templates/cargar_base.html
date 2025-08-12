@@ -2,29 +2,27 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8" />
-    <title>Cargar Base de Guías</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+    <title>Cargar base de guías</title>
 </head>
 <body>
-<div class="container mt-4">
-    <h2>Cargar Base de Guías (Excel)</h2>
-    <a href="{{ url_for('index') }}" class="btn btn-secondary mb-3">Volver al inicio</a>
+    <h1>Cargar base de guías (Excel)</h1>
+    <form method="POST" enctype="multipart/form-data">
+        <input type="file" name="archivo_excel" accept=".xls,.xlsx" required />
+        <button type="submit">Cargar</button>
+    </form>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
-        {% for category, message in messages %}
-          <div class="alert alert-{{category}}">{{ message|safe }}</div>
-        {% endfor %}
+        <ul>
+          {% for category, message in messages %}
+            <li style="color: {% if category == 'error' %}red{% elif category == 'success' %}green{% else %}black{% endif %};">
+                {{ message }}
+            </li>
+          {% endfor %}
+        </ul>
       {% endif %}
     {% endwith %}
 
-    <form method="post" enctype="multipart/form-data">
-        <div class="mb-3">
-            <label for="archivo_excel" class="form-label">Seleccione archivo Excel (.xlsx)</label>
-            <input type="file" class="form-control" id="archivo_excel" name="archivo_excel" accept=".xlsx" required>
-        </div>
-        <button type="submit" class="btn btn-primary">Cargar Base</button>
-    </form>
-</div>
+    <a href="{{ url_for('index') }}">Volver al inicio</a>
 </body>
 </html>
