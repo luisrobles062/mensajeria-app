@@ -2,31 +2,21 @@
 {% block title %}Registrar Mensajero - CERTISERVI{% endblock %}
 {% block content %}
 <h2>Registrar Nuevo Mensajero</h2>
-
-<form action="/registrar_mensajero" method="POST" class="mt-4">
+<form method="POST">
     <div class="mb-3">
-        <label for="nombre" class="form-label">Nombre Mensajero</label>
-        <input type="text" name="nombre" id="nombre" class="form-control" required>
+        <label for="nombre" class="form-label">Nombre del Mensajero</label>
+        <input type="text" class="form-control" id="nombre" name="nombre" required />
     </div>
     <div class="mb-3">
-        <label for="zona" class="form-label">Zona</label>
-        <select name="zona" id="zona" class="form-select" required>
-            <option value="" disabled selected>Seleccione zona</option>
+        <label for="zona_id" class="form-label">Zona</label>
+        <select id="zona_id" name="zona_id" class="form-select" required>
+            <option value="" selected disabled>Seleccione una zona</option>
             {% for zona in zonas %}
-            <option value="{{ zona.nombre }}">{{ zona.nombre }}</option>
+            <option value="{{ zona.id }}">{{ zona.nombre }}</option>
             {% endfor %}
         </select>
     </div>
     <button type="submit" class="btn btn-primary">Registrar Mensajero</button>
-    <a href="/" class="btn btn-secondary ms-2">Volver al Inicio</a>
+    <a href="{{ url_for('index') }}" class="btn btn-secondary ms-2">Volver al Inicio</a>
 </form>
-
-<h3 class="mt-5">Mensajeros Registrados</h3>
-<ul class="list-group mt-3">
-    {% for mensajero in mensajeros %}
-    <li class="list-group-item">{{ mensajero.nombre }} - Zona: {{ mensajero.zona }}</li>
-    {% else %}
-    <li class="list-group-item">No hay mensajeros registrados.</li>
-    {% endfor %}
-</ul>
 {% endblock %}
