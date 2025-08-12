@@ -2,19 +2,19 @@
 {% block title %}Consultar Estado - CERTISERVI{% endblock %}
 {% block content %}
 <h2>Consultar Estado de Guías</h2>
-
-<form action="/consultar_estado" method="POST" class="mt-4 mb-4">
+<form method="POST">
     <div class="mb-3">
-        <label for="guias" class="form-label">Ingrese números de guías (una por línea)</label>
-        <textarea name="guias" id="guias" rows="6" class="form-control" placeholder="Ejemplo:&#10;12345&#10;67890" required></textarea>
+        <label for="guias_input" class="form-label">Ingrese números de guía (una por línea)</label>
+        <textarea class="form-control" id="guias_input" name="guias_input" rows="6" placeholder="Ejemplo: 12345\n67890\n..." required></textarea>
     </div>
-    <button type="submit" name="exportar" value="0" class="btn btn-primary">Consultar</button>
-    <button type="submit" name="exportar" value="1" class="btn btn-success ms-2">Exportar a Excel</button>
-    <a href="/" class="btn btn-secondary ms-2">Volver al Inicio</a>
+    <button type="submit" class="btn btn-primary">Consultar</button>
+    <a href="{{ url_for('index') }}" class="btn btn-secondary ms-2">Volver al Inicio</a>
 </form>
 
-{% if resultados is not none %}
-<table class="table table-bordered table-hover">
+{% if resultados %}
+<hr />
+<h3>Resultados</h3>
+<table class="table table-bordered table-striped">
     <thead>
         <tr>
             <th>Guía</th>
@@ -22,8 +22,7 @@
             <th>Motivo</th>
             <th>Mensajero</th>
             <th>Zona</th>
-            <th>Fecha de Despacho</th>
-            <th>Gestión</th>
+            <th>Fecha Despacho</th>
         </tr>
     </thead>
     <tbody>
@@ -31,11 +30,10 @@
         <tr>
             <td>{{ r.numero_guia }}</td>
             <td>{{ r.estado }}</td>
-            <td>{{ r.motivo }}</td>
-            <td>{{ r.mensajero }}</td>
-            <td>{{ r.zona }}</td>
-            <td>{% if r.fecha_despacho %}{{ r.fecha_despacho.strftime("%Y-%m-%d %H:%M:%S") }}{% endif %}</td>
-            <td>{{ r.gestion }}</td>
+            <td>{{ r.motivo or '' }}</td>
+            <td>{{ r.mensajero or '' }}</td>
+            <td>{{ r.zona or '' }}</td>
+            <td>{{ r.fecha_despacho or '' }}</td>
         </tr>
         {% endfor %}
     </tbody>
