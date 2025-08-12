@@ -2,21 +2,42 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{% block title %}Mensajería App{% endblock %}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
 </head>
 <body>
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-3">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-3">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('index') }}">Mensajería App</a>
+            <div>
+                <a href="{{ url_for('index') }}" class="btn btn-sm btn-outline-light me-1">Inicio</a>
+                <a href="{{ url_for('cargar_base') }}" class="btn btn-sm btn-outline-light me-1">Cargar Base</a>
+                <a href="{{ url_for('registrar_zona') }}" class="btn btn-sm btn-outline-light me-1">Registrar Zona</a>
+                <a href="{{ url_for('registrar_mensajero') }}" class="btn btn-sm btn-outline-light me-1">Registrar Mensajero</a>
+                <a href="{{ url_for('despachar_guias') }}" class="btn btn-sm btn-outline-light me-1">Despachar Guías</a>
+                <a href="{{ url_for('consultar_estado') }}" class="btn btn-sm btn-outline-light me-1">Consultar Estado</a>
+                <a href="{{ url_for('registrar_recepcion') }}" class="btn btn-sm btn-outline-light me-1">Registrar Recepción</a>
+                <a href="{{ url_for('registrar_recogida') }}" class="btn btn-sm btn-outline-light me-1">Registrar Recogida</a>
+                <a href="{{ url_for('ver_recogidas') }}" class="btn btn-sm btn-outline-light me-1">Ver Recogidas</a>
+                <a href="{{ url_for('liquidacion') }}" class="btn btn-sm btn-outline-light me-1">Liquidación</a>
+            </div>
+        </div>
+    </nav>
     <div class="container">
-        <a class="navbar-brand" href="{{ url_for('index') }}">Mensajería App</a>
-        <div>
-            <a href="{{ url_for('index') }}" class="btn btn-sm btn-outline-light me-1">Inicio</a>
-            <a href="{{ url_for('cargar_base') }}" class="btn btn-sm btn-outline-light me-1">Cargar Base</a>
-            <a href="{{ url_for('registrar_zona') }}" class="btn btn-sm btn-outline-light me-1">Registrar Zona</a>
-            <a href="{{ url_for('registrar_mensajero') }}" class="btn btn-sm btn-outline-light me-1">Registrar Mensajero</a>
-            <a href="{{ url_for('despachar_guias') }}" class="btn btn-sm btn-outline-light me-1">Despachar Guías</a>
-            <a href="{{ url_for('consultar_estado') }}" class="btn btn-sm btn-outline-light me-1">Consultar Estado</a>
-            <a href="{{ url_for('registrar_recepcion') }}" class="btn btn-sm btn-outline-light me-1">Registrar Recepción</a>
-            <a href="{{ url_for('registrar_recogida') }}" class="btn btn-sm btn-outline-light me-1">Registrar Recogida</a>
-            <a href="{{ url_for('ver_recogidas') }}" class="btn btn-sm btn-outline-light me-1">Ver Recogidas</a>
-            <a href="{{ url_for('liquidacion')
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
