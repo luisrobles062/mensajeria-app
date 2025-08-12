@@ -1,19 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Inicio - CERTISERVI{% endblock %}
 {% block content %}
-<h2 class="mb-4 text-center">Plataforma de Mensajería</h2>
-
-<div class="list-group">
-    <a href="/cargar_base" class="list-group-item list-group-item-action">Cargar Base de Guías (Excel)</a>
-    <a href="/registrar_zona" class="list-group-item list-group-item-action">Registrar Zona</a>
-    <a href="/registrar_mensajero" class="list-group-item list-group-item-action">Registrar Mensajero</a>
-    <a href="/despachar_guias" class="list-group-item list-group-item-action">Despachar Guías</a>
-    <a href="/ver_despacho" class="list-group-item list-group-item-action">Ver Despacho</a>
-    <a href="/registrar_recepcion" class="list-group-item list-group-item-action">Registrar Recepción</a>
-    <a href="/consultar_estado" class="list-group-item list-group-item-action">Consultar Estado</a>
-    <a href="/verificacion_entrada" class="list-group-item list-group-item-action">Verificación de Correo Entrante</a>
-    <a href="/liquidacion" class="list-group-item list-group-item-action">Liquidación</a>
-    <a href="/registrar_recogida" class="list-group-item list-group-item-action">Registrar Recogida</a>
-    <a href="/ver_recogidas" class="list-group-item list-group-item-action">Ver Recogidas</a>
+<div class="text-center">
+    <h1>Bienvenido a CERTISERVI</h1>
+    <p>Gestiona tu servicio de mensajería de forma eficiente.</p>
+    <a href="{{ url_for('cargar_base') }}" class="btn btn-primary">Cargar Base de Guías</a>
 </div>
 {% endblock %}
