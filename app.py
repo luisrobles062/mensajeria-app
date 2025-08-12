@@ -75,7 +75,7 @@ def index():
 @app.route('/cargar_base', methods=['GET', 'POST'])
 def cargar_base():
     if request.method == 'POST':
-        archivo = request.files.get('archivo')
+        archivo = request.files.get('archivo_excel')  # Ajustado según tu input name
         if not archivo:
             flash('No se seleccionó ningún archivo', 'danger')
             return redirect(request.url)
@@ -87,10 +87,11 @@ def cargar_base():
                 return redirect(request.url)
             df.columns = [col.lower() for col in df.columns]
             for _, row in df.iterrows():
-                guia = Guia.query.get(row['numero_guia'])
+                numero_guia_str = str(row['numero_guia'])
+                guia = Guia.query.get(numero_guia_str)
                 if not guia:
                     guia = Guia(
-                        numero_guia=row['numero_guia'],
+                        numero_guia=numero_guia_str,
                         remitente=row['remitente'],
                         destinatario=row['destinatario'],
                         direccion=row['direccion'],
@@ -170,18 +171,19 @@ def despachar_guias():
         errores = []
         despachadas = []
         for num_guia in guias:
-            guia = Guia.query.get(num_guia)
+            numero_guia_str = str(num_guia)
+            guia = Guia.query.get(numero_guia_str)
             if not guia:
-                errores.append(f'Guía {num_guia} no existe en base')
+                errores.append(f'Guía {numero_guia_str} no existe en base')
                 continue
             # Verificar si ya despachada
-            ya_despachada = Despacho.query.filter_by(numero_guia=num_guia).first()
+            ya_despachada = Despacho.query.filter_by(numero_guia=numero_guia_str).first()
             if ya_despachada:
-                errores.append(f'Guía {num_guia} ya fue despachada')
+                errores.append(f'Guía {numero_guia_str} ya fue despachada')
                 continue
-            despacho = Despacho(numero_guia=num_guia, mensajero_id=mensajero_id)
+            despacho = Despacho(numero_guia=numero_guia_str, mensajero_id=mensajero_id)
             db.session.add(despacho)
-            despachadas.append(num_guia)
+            despachadas.append(numero_guia_str)
         db.session.commit()
         if errores:
             flash('Errores: ' + '; '.join(errores), 'danger')
@@ -201,13 +203,14 @@ def consultar_estado():
             return redirect(request.url)
         guias = [g.strip() for g in guias_input.split('\n') if g.strip()]
         for num_guia in guias:
-            guia = Guia.query.get(num_guia)
+            numero_guia_str = str(num_guia)
+            guia = Guia.query.get(numero_guia_str)
             if not guia:
-                resultados.append({'numero_guia': num_guia, 'estado': 'FALTANTE'})
+                resultados.append({'numero_guia': numero_guia_str, 'estado': 'FALTANTE'})
                 continue
-            despacho = Despacho.query.filter_by(numero_guia=num_guia).first()
+            despacho = Despacho.query.filter_by(numero_guia=numero_guia_str).first()
             if not despacho:
-                resultados.append({'numero_guia': num_guia, 'estado': 'EN VERIFICACIÓN'})
+                resultados.append({'numero_guia': numero_guia_str, 'estado': 'EN VERIFICACIÓN'})
                 continue
             recepcion = Recepcion.query.filter_by(despacho_id=despacho.id).order_by(Recepcion.fecha_recepcion.desc()).first()
             if recepcion:
@@ -217,7 +220,7 @@ def consultar_estado():
                 estado = 'DESPACHADA'
                 motivo = ''
             resultados.append({
-                'numero_guia': num_guia,
+                'numero_guia': numero_guia_str,
                 'estado': estado,
                 'motivo': motivo,
                 'mensajero': despacho.mensajero.nombre,
@@ -230,7 +233,7 @@ def consultar_estado():
 @app.route('/registrar_recepcion', methods=['GET', 'POST'])
 def registrar_recepcion():
     if request.method == 'POST':
-        numero_guia = request.form.get('numero_guia')
+        numero_guia = str(request.form.get('numero_guia'))
         tipo_evento = request.form.get('tipo_evento')
         motivo = request.form.get('motivo') if tipo_evento == 'DEVOLUCION' else None
 
@@ -360,7 +363,7 @@ def ver_guias():
 @app.route('/verificacion_entrada', methods=['GET', 'POST'])
 def verificacion_entrada():
     if request.method == 'POST':
-        numero_guia = request.form.get('numero_guia')
+        numero_guia = str(request.form.get('numero_guia'))
         guia = Guia.query.get(numero_guia)
         if not guia:
             flash('Guía FALTANTE', 'danger')
