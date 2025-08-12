@@ -3,12 +3,11 @@ import psycopg2
 from urllib.parse import urlparse, parse_qsl
 from datetime import datetime
 import pandas as pd
-import io
 
 app = Flask(__name__)
 app.secret_key = 'secreto'
 
-# URL completa de la base de datos PostgreSQL Neon
+# URL de conexión a PostgreSQL Neon (sin espacios)
 DATABASE_URL = "postgresql://neondb_owner:npg_3owpfIUOAT0a@ep-soft-bush-acv2a8v4-pooler.sa-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 
 def get_connection():
@@ -16,7 +15,6 @@ def get_connection():
     query_params = dict(parse_qsl(url.query))
     # Eliminar channel_binding porque psycopg2 no lo soporta
     query_params.pop('channel_binding', None)
-    # Reconstruir query string válido
     query_string = '&'.join(f"{k}={v}" for k, v in query_params.items() if v)
     dsn = (
         f"dbname={url.path[1:]} "
@@ -91,8 +89,8 @@ def index():
 @app.route('/registrar_zona', methods=['GET', 'POST'])
 def registrar_zona():
     if request.method == 'POST':
-        nombre = request.form['nombre'].strip()
-        tarifa = request.form['tarifa'].strip()
+        nombre = request.form['nombre']
+        tarifa = request.form['tarifa']
         try:
             tarifa = float(tarifa)
         except ValueError:
@@ -124,7 +122,7 @@ def registrar_mensajero():
     conn.close()
 
     if request.method == 'POST':
-        nombre = request.form['nombre'].strip()
+        nombre = request.form['nombre']
         zona = request.form['zona']
         conn = get_connection()
         cursor = conn.cursor()
@@ -145,69 +143,61 @@ def registrar_mensajero():
 def cargar_base():
     if request.method == 'POST':
         if 'archivo' not in request.files:
-            flash('No se encontró el archivo', 'error')
+            flash('No se seleccionó ningún archivo', 'error')
             return redirect(url_for('cargar_base'))
         archivo = request.files['archivo']
         if archivo.filename == '':
-            flash('No seleccionó ningún archivo', 'error')
-            return redirect(url_for('cargar_base'))
-        if not archivo.filename.lower().endswith(('.xls', '.xlsx')):
-            flash('Solo se permiten archivos Excel (.xls, .xlsx)', 'error')
+            flash('No se seleccionó ningún archivo', 'error')
             return redirect(url_for('cargar_base'))
 
         try:
-            contenido = archivo.read()
-            df = pd.read_excel(io.BytesIO(contenido))
+            df = pd.read_excel(archivo)
         except Exception as e:
             flash(f'Error leyendo el archivo Excel: {e}', 'error')
             return redirect(url_for('cargar_base'))
 
-        columnas_necesarias = {'numero_guia', 'remitente', 'destinatario', 'direccion', 'ciudad', 'zona'}
-        if not columnas_necesarias.issubset(df.columns.str.lower()):
+        columnas_necesarias = {'numero_guia', 'remitente', 'destinatario', 'direccion', 'ciudad'}
+        if not columnas_necesarias.issubset(set(df.columns)):
             flash(f'El archivo Excel debe contener las columnas: {", ".join(columnas_necesarias)}', 'error')
             return redirect(url_for('cargar_base'))
 
-        # Normalizar columnas a minúsculas
-        df.columns = df.columns.str.lower()
+        tiene_zona = 'zona' in df.columns
 
         conn = get_connection()
         cursor = conn.cursor()
-        filas_insertadas = 0
-        filas_actualizadas = 0
+        errores = 0
         for _, row in df.iterrows():
             try:
                 cursor.execute("""
-                INSERT INTO guias (numero_guia, remitente, destinatario, direccion, ciudad, zona)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (numero_guia) DO UPDATE SET
-                    remitente = EXCLUDED.remitente,
-                    destinatario = EXCLUDED.destinatario,
-                    direccion = EXCLUDED.direccion,
-                    ciudad = EXCLUDED.ciudad,
-                    zona = EXCLUDED.zona
+                    INSERT INTO guias (numero_guia, remitente, destinatario, direccion, ciudad, zona)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (numero_guia) DO UPDATE SET
+                        remitente = EXCLUDED.remitente,
+                        destinatario = EXCLUDED.destinatario,
+                        direccion = EXCLUDED.direccion,
+                        ciudad = EXCLUDED.ciudad,
+                        zona = EXCLUDED.zona
                 """, (
                     str(row['numero_guia']).strip(),
                     str(row['remitente']).strip(),
                     str(row['destinatario']).strip(),
                     str(row['direccion']).strip(),
                     str(row['ciudad']).strip(),
-                    str(row['zona']).strip()
+                    str(row['zona']).strip() if tiene_zona else ''
                 ))
-                if cursor.rowcount == 1:
-                    filas_insertadas += 1
-                else:
-                    filas_actualizadas += 1
             except Exception as e:
-                conn.rollback()
-                flash(f'Error en la fila con guía {row["numero_guia"]}: {e}', 'error')
-                cursor.close()
-                conn.close()
-                return redirect(url_for('cargar_base'))
+                errores += 1
+                print(f"Error insertando la guía {row.get('numero_guia', 'desconocido')}: {e}")
+
         conn.commit()
         cursor.close()
         conn.close()
 
-        flash(f'Archivo procesado correctamente. Nuevas guías: {filas_insertadas}, actualizadas: {filas_actualizadas}', 'success')
+        if errores > 0:
+            flash(f'Carga completada con {errores} errores.', 'warning')
+        else:
+            flash('Carga completada exitosamente', 'success')
+
         return redirect(url_for('cargar_base'))
 
     return render_template('cargar_base.html')
@@ -216,67 +206,39 @@ def cargar_base():
 def consultar_estado():
     estado = None
     if request.method == 'POST':
-        numero_guia = request.form['numero_guia'].strip()
+        numero_guia = request.form['numero_guia']
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT estado FROM guias WHERE numero_guia = %s", (numero_guia,))
         row = cursor.fetchone()
-        cursor.close()
-        conn.close()
         if row:
             estado = row[0]
         else:
             flash('Guía no encontrada', 'error')
+        cursor.close()
+        conn.close()
     return render_template('consultar_estado.html', estado=estado)
 
 @app.route('/despachar_guias', methods=['GET', 'POST'])
 def despachar_guias():
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT numero_guia FROM guias WHERE estado = 'pendiente'")
+    cursor.execute("SELECT numero_guia FROM guias WHERE estado='pendiente'")
     guias = cursor.fetchall()
+
     cursor.execute("SELECT nombre FROM mensajeros")
     mensajeros = cursor.fetchall()
     cursor.close()
     conn.close()
 
     if request.method == 'POST':
-        numero_guia = request.form['numero_guia'].strip()
+        numero_guia = request.form['numero_guia']
         mensajero = request.form['mensajero']
         conn = get_connection()
         cursor = conn.cursor()
-
-        # Validar que la guía exista y esté pendiente
-        cursor.execute("SELECT estado, zona FROM guias WHERE numero_guia = %s", (numero_guia,))
-        guia_info = cursor.fetchone()
-        if not guia_info:
-            flash('La guía no existe', 'error')
-            cursor.close()
-            conn.close()
-            return redirect(url_for('despachar_guias'))
-        estado_guia, zona_guia = guia_info
-        if estado_guia != 'pendiente':
-            flash('La guía no está en estado pendiente', 'error')
-            cursor.close()
-            conn.close()
-            return redirect(url_for('despachar_guias'))
-
-        # Validar que el mensajero exista y pertenezca a la misma zona
-        cursor.execute("SELECT zona FROM mensajeros WHERE nombre = %s", (mensajero,))
-        mensajero_zona = cursor.fetchone()
-        if not mensajero_zona:
-            flash('El mensajero no existe', 'error')
-            cursor.close()
-            conn.close()
-            return redirect(url_for('despachar_guias'))
-        if mensajero_zona[0] != zona_guia:
-            flash(f'El mensajero no pertenece a la zona de la guía ({zona_guia})', 'error')
-            cursor.close()
-            conn.close()
-            return redirect(url_for('despachar_guias'))
-
+        # Validar que la guía pertenece a la zona del mensajero aquí (opcional)
         cursor.execute("INSERT INTO despachos (numero_guia, mensajero) VALUES (%s, %s)", (numero_guia, mensajero))
-        cursor.execute("UPDATE guias SET estado='despachado' WHERE numero_guia = %s", (numero_guia,))
+        cursor.execute("UPDATE guias SET estado='despachado' WHERE numero_guia=%s", (numero_guia,))
         conn.commit()
         cursor.close()
         conn.close()
@@ -288,13 +250,13 @@ def despachar_guias():
 @app.route('/registrar_recepcion', methods=['GET', 'POST'])
 def registrar_recepcion():
     if request.method == 'POST':
-        numero_guia = request.form['numero_guia'].strip()
+        numero_guia = request.form['numero_guia']
         estado = request.form['estado']
-        causal = request.form['causal'].strip()
+        causal = request.form['causal']
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute("INSERT INTO recepciones (numero_guia, estado, causal) VALUES (%s, %s, %s)", (numero_guia, estado, causal))
-        cursor.execute("UPDATE guias SET estado = %s WHERE numero_guia = %s", (estado, numero_guia))
+        cursor.execute("UPDATE guias SET estado=%s WHERE numero_guia=%s", (estado, numero_guia))
         conn.commit()
         cursor.close()
         conn.close()
@@ -305,9 +267,9 @@ def registrar_recepcion():
 @app.route('/registrar_recogida', methods=['GET', 'POST'])
 def registrar_recogida():
     if request.method == 'POST':
-        numero_guia = request.form['numero_guia'].strip()
-        fecha = request.form['fecha'].strip()
-        observaciones = request.form['observaciones'].strip()
+        numero_guia = request.form['numero_guia']
+        fecha = request.form['fecha']
+        observaciones = request.form['observaciones']
         try:
             fecha_dt = datetime.strptime(fecha, '%Y-%m-%d')
         except ValueError:
