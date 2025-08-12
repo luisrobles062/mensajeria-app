@@ -1,23 +1,26 @@
 {% extends "base.html" %}
 {% block title %}Despachar Guías - CERTISERVI{% endblock %}
 {% block content %}
-<h2>Despachar Guías</h2>
-
-<form action="/despachar_guias" method="POST" class="mt-4">
+<h2>Despachar Guías a Mensajero</h2>
+<form method="POST">
     <div class="mb-3">
-        <label for="mensajero" class="form-label">Seleccione Mensajero</label>
-        <select name="mensajero" id="mensajero" class="form-select" required>
-            <option value="" disabled selected>Seleccione mensajero</option>
-            {% for m in mensajeros %}
-            <option value="{{ m.nombre }}">{{ m.nombre }} (Zona: {{ m.zona }})</option>
+        <label for="mensajero_id" class="form-label">Seleccione Mensajero</label>
+        <select id="mensajero_id" name="mensajero_id" class="form-select" required>
+            <option value="" selected disabled>Seleccione un mensajero</option>
+            {% for zona in zonas %}
+                <optgroup label="{{ zona.nombre }}">
+                {% for mensajero in zona.mensajeros %}
+                    <option value="{{ mensajero.id }}">{{ mensajero.nombre }}</option>
+                {% endfor %}
+                </optgroup>
             {% endfor %}
         </select>
     </div>
     <div class="mb-3">
-        <label for="guias" class="form-label">Guías (una por línea, desde lector de código de barras)</label>
-        <textarea name="guias" id="guias" rows="6" class="form-control" placeholder="Ejemplo:&#10;12345&#10;67890" required></textarea>
+        <label for="guias_input" class="form-label">Ingrese números de guías (una por línea)</label>
+        <textarea class="form-control" id="guias_input" name="guias_input" rows="6" placeholder="Ejemplo: 12345\n67890\n..." required></textarea>
     </div>
     <button type="submit" class="btn btn-primary">Despachar</button>
-    <a href="/" class="btn btn-secondary ms-2">Volver al Inicio</a>
+    <a href="{{ url_for('index') }}" class="btn btn-secondary ms-2">Volver al Inicio</a>
 </form>
 {% endblock %}
