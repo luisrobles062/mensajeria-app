@@ -2,29 +2,16 @@
 {% block title %}Registrar Zona - CERTISERVI{% endblock %}
 {% block content %}
 <h2>Registrar Nueva Zona</h2>
-
-<form action="/registrar_zona" method="POST" class="mt-4">
+<form method="POST">
     <div class="mb-3">
-        <label for="nombre" class="form-label">Nombre Zona</label>
-        <input type="text" name="nombre" id="nombre" class="form-control" required>
+        <label for="nombre" class="form-label">Nombre de la Zona</label>
+        <input type="text" class="form-control" id="nombre" name="nombre" required />
     </div>
     <div class="mb-3">
         <label for="tarifa" class="form-label">Tarifa (COP)</label>
-        <input type="number" step="0.01" name="tarifa" id="tarifa" class="form-control" required>
+        <input type="number" step="0.01" min="0" class="form-control" id="tarifa" name="tarifa" required />
     </div>
     <button type="submit" class="btn btn-primary">Registrar Zona</button>
-    <a href="/" class="btn btn-secondary ms-2">Volver al Inicio</a>
+    <a href="{{ url_for('index') }}" class="btn btn-secondary ms-2">Volver al Inicio</a>
 </form>
-
-<h3 class="mt-5">Zonas Registradas</h3>
-<ul class="list-group mt-3">
-    {% for zona in zonas %}
-    <li class="list-group-item d-flex justify-content-between align-items-center">
-        <span>{{ zona.nombre }}</span>
-        <span class="badge bg-primary rounded-pill">${{ "%.2f"|format(zona.tarifa) }}</span>
-    </li>
-    {% else %}
-    <li class="list-group-item">No hay zonas registradas.</li>
-    {% endfor %}
-</ul>
 {% endblock %}
