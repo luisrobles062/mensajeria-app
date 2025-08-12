@@ -9,20 +9,22 @@ from datetime import datetime
 app = Flask(__name__)
 app.secret_key = 'tu_clave_secreta_aqui'
 
-# Configura tu URI de conexión a Postgres
+# Límite para subida de archivos (50 MB)
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
+
+# Configura aquí tu URI de PostgreSQL
 app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://neondb_owner:npg_3owpfIUOAT0a@ep-soft-bush-acv2a8v4-pooler.sa-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 
-# ------------------ MODELOS ------------------------
+# -------------- MODELOS -----------------
 
 class Zona(db.Model):
     __tablename__ = 'zonas'
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(100), unique=True, nullable=False)
     tarifa = db.Column(db.Float, nullable=False)
-
     mensajeros = db.relationship('Mensajero', backref='zona', lazy=True)
 
 class Mensajero(db.Model):
@@ -30,7 +32,6 @@ class Mensajero(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(100), unique=True, nullable=False)
     zona_id = db.Column(db.Integer, db.ForeignKey('zonas.id'), nullable=False)
-
     despachos = db.relationship('Despacho', backref='mensajero', lazy=True)
 
 class Guia(db.Model):
@@ -47,7 +48,6 @@ class Despacho(db.Model):
     numero_guia = db.Column(db.String(50), db.ForeignKey('guias.numero_guia'), nullable=False)
     mensajero_id = db.Column(db.Integer, db.ForeignKey('mensajeros.id'), nullable=False)
     fecha_despacho = db.Column(db.DateTime, default=datetime.utcnow)
-
     recepciones = db.relationship('Recepcion', backref='despacho', lazy=True)
 
 class Recepcion(db.Model):
@@ -55,7 +55,7 @@ class Recepcion(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     despacho_id = db.Column(db.Integer, db.ForeignKey('despachos.id'), nullable=False)
     tipo_evento = db.Column(db.String(20))  # ENTREGA o DEVOLUCION
-    motivo = db.Column(db.String(50), nullable=True)  # Si es devolución, motivo
+    motivo = db.Column(db.String(50), nullable=True)  # motivo si es devolución
     fecha_recepcion = db.Column(db.DateTime, default=datetime.utcnow)
 
 class Recogida(db.Model):
@@ -65,33 +65,33 @@ class Recogida(db.Model):
     fecha = db.Column(db.Date)
     observaciones = db.Column(db.Text)
 
-# ------------------ RUTAS ------------------------
+# -------------- RUTAS -------------------
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
-# --- Cargar base desde Excel ---
 @app.route('/cargar_base', methods=['GET', 'POST'])
 def cargar_base():
     if request.method == 'POST':
-        archivo = request.files.get('archivo_excel')  # Ajustado según tu input name
+        archivo = request.files.get('archivo')
         if not archivo:
             flash('No se seleccionó ningún archivo', 'danger')
             return redirect(request.url)
         try:
             df = pd.read_excel(archivo)
             columnas_necesarias = {'numero_guia', 'remitente', 'destinatario', 'direccion', 'ciudad'}
-            if not columnas_necesarias.issubset(set(col.lower() for col in df.columns)):
+            columnas_lower = set(col.lower() for col in df.columns)
+            if not columnas_necesarias.issubset(columnas_lower):
                 flash(f'El archivo debe contener estas columnas: {columnas_necesarias}', 'danger')
                 return redirect(request.url)
             df.columns = [col.lower() for col in df.columns]
             for _, row in df.iterrows():
-                numero_guia_str = str(row['numero_guia'])
-                guia = Guia.query.get(numero_guia_str)
+                numero = str(row['numero_guia'])
+                guia = Guia.query.get(numero)
                 if not guia:
                     guia = Guia(
-                        numero_guia=numero_guia_str,
+                        numero_guia=numero,
                         remitente=row['remitente'],
                         destinatario=row['destinatario'],
                         direccion=row['direccion'],
@@ -104,14 +104,13 @@ def cargar_base():
                     guia.direccion = row['direccion']
                     guia.ciudad = row['ciudad']
             db.session.commit()
-            flash('Base de guías cargada correctamente', 'success')
+            flash('Base de guías cargada correctamente.', 'success')
             return redirect(url_for('index'))
         except Exception as e:
             flash(f'Error al procesar archivo: {e}', 'danger')
             return redirect(request.url)
     return render_template('cargar_base.html')
 
-# --- Registrar Zona ---
 @app.route('/registrar_zona', methods=['GET', 'POST'])
 def registrar_zona():
     if request.method == 'POST':
@@ -123,7 +122,7 @@ def registrar_zona():
         try:
             tarifa_val = float(tarifa)
             if tarifa_val < 0:
-                raise ValueError('Tarifa negativa')
+                raise ValueError()
         except:
             flash('Tarifa debe ser un número positivo', 'danger')
             return redirect(request.url)
@@ -137,7 +136,6 @@ def registrar_zona():
         return redirect(url_for('index'))
     return render_template('registrar_zona.html')
 
-# --- Registrar Mensajero ---
 @app.route('/registrar_mensajero', methods=['GET', 'POST'])
 def registrar_mensajero():
     zonas = Zona.query.order_by(Zona.nombre).all()
@@ -157,7 +155,6 @@ def registrar_mensajero():
         return redirect(url_for('index'))
     return render_template('registrar_mensajero.html', zonas=zonas)
 
-# --- Despachar guías ---
 @app.route('/despachar_guias', methods=['GET', 'POST'])
 def despachar_guias():
     zonas = Zona.query.order_by(Zona.nombre).all()
@@ -176,7 +173,6 @@ def despachar_guias():
             if not guia:
                 errores.append(f'Guía {numero_guia_str} no existe en base')
                 continue
-            # Verificar si ya despachada
             ya_despachada = Despacho.query.filter_by(numero_guia=numero_guia_str).first()
             if ya_despachada:
                 errores.append(f'Guía {numero_guia_str} ya fue despachada')
@@ -192,7 +188,6 @@ def despachar_guias():
         return redirect(url_for('index'))
     return render_template('despachar_guias.html', zonas=zonas)
 
-# --- Consultar estado de guías ---
 @app.route('/consultar_estado', methods=['GET', 'POST'])
 def consultar_estado():
     resultados = []
@@ -229,19 +224,16 @@ def consultar_estado():
             })
     return render_template('consultar_estado.html', resultados=resultados)
 
-# --- Registrar recepción (entrega o devolución) ---
 @app.route('/registrar_recepcion', methods=['GET', 'POST'])
 def registrar_recepcion():
     if request.method == 'POST':
         numero_guia = str(request.form.get('numero_guia'))
         tipo_evento = request.form.get('tipo_evento')
         motivo = request.form.get('motivo') if tipo_evento == 'DEVOLUCION' else None
-
         despacho = Despacho.query.filter_by(numero_guia=numero_guia).first()
         if not despacho:
             flash('Esta guía no ha sido despachada', 'danger')
             return redirect(request.url)
-
         recepcion = Recepcion(
             despacho_id=despacho.id,
             tipo_evento=tipo_evento,
@@ -252,30 +244,24 @@ def registrar_recepcion():
         db.session.commit()
         flash(f'Recepción registrada: {tipo_evento}', 'success')
         return redirect(url_for('index'))
-
     return render_template('registrar_recepcion.html')
 
-# --- Liquidación ---
 @app.route('/liquidacion', methods=['GET', 'POST'])
 def liquidacion():
     liquidaciones = []
     chart_png = None
     fecha_inicio = None
     fecha_fin = None
-
     if request.method == 'POST':
         fecha_inicio = request.form.get('fecha_inicio')
         fecha_fin = request.form.get('fecha_fin')
         exportar = request.form.get('exportar')
-
         try:
             fi = datetime.strptime(fecha_inicio, '%Y-%m-%d')
             ff = datetime.strptime(fecha_fin, '%Y-%m-%d')
         except Exception:
             flash('Fechas inválidas', 'danger')
             return redirect(request.url)
-
-        # Consulta liquidación por mensajero
         query = db.session.query(
             Mensajero.nombre.label('mensajero'),
             db.func.count(Despacho.id).label('cantidad'),
@@ -284,19 +270,14 @@ def liquidacion():
          .join(Despacho, Despacho.mensajero_id == Mensajero.id)\
          .filter(Despacho.fecha_despacho >= fi, Despacho.fecha_despacho <= ff)\
          .group_by(Mensajero.nombre)
-
         liquidaciones = query.all()
-
         if exportar:
-            # Exportar a Excel
             df = pd.DataFrame([(l.mensajero, l.cantidad, l.total) for l in liquidaciones], columns=['Mensajero', 'Cantidad Guías', 'Total (COP)'])
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df.to_excel(writer, index=False, sheet_name='Liquidacion')
             output.seek(0)
             return send_file(output, download_name='liquidacion.xlsx', as_attachment=True)
-
-        # Generar gráfico
         if liquidaciones:
             nombres = [l.mensajero for l in liquidaciones]
             totales = [l.total for l in liquidaciones]
@@ -312,11 +293,9 @@ def liquidacion():
             plt.close()
             img.seek(0)
             chart_png = base64.b64encode(img.getvalue()).decode('utf8')
-
     return render_template('liquidacion.html', liquidaciones=liquidaciones, chart_png=chart_png,
                            fecha_inicio=fecha_inicio, fecha_fin=fecha_fin)
 
-# --- Registrar recogida ---
 @app.route('/registrar_recogida', methods=['GET', 'POST'])
 def registrar_recogida():
     if request.method == 'POST':
@@ -341,25 +320,21 @@ def registrar_recogida():
         return redirect(url_for('ver_recogidas'))
     return render_template('registrar_recogida.html')
 
-# --- Ver recogidas ---
 @app.route('/ver_recogidas')
 def ver_recogidas():
     recogidas = Recogida.query.order_by(Recogida.fecha.desc()).all()
     return render_template('ver_recogidas.html', recogidas=recogidas)
 
-# --- Ver despacho ---
 @app.route('/ver_despacho')
 def ver_despacho():
     despachos = Despacho.query.order_by(Despacho.fecha_despacho.desc()).all()
     return render_template('ver_despacho.html', despachos=despachos)
 
-# --- Ver guías ---
 @app.route('/ver_guias')
 def ver_guias():
     guias = Guia.query.order_by(Guia.numero_guia).all()
     return render_template('ver_guias.html', guias=guias)
 
-# --- Verificación entrada (escaneo rápido) ---
 @app.route('/verificacion_entrada', methods=['GET', 'POST'])
 def verificacion_entrada():
     if request.method == 'POST':
@@ -372,13 +347,10 @@ def verificacion_entrada():
         return redirect(request.url)
     return render_template('verificacion_entrada.html')
 
-# ------------------ UTILIDADES ------------------------
-
+# Context processor para usar la fecha actual en templates
 @app.context_processor
 def inject_now():
     return {'now': datetime.utcnow()}
-
-# ------------------ INICIALIZAR ------------------------
 
 if __name__ == '__main__':
     with app.app_context():
