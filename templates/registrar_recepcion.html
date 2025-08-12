@@ -1,24 +1,24 @@
 {% extends "base.html" %}
 {% block title %}Registrar Recepción - CERTISERVI{% endblock %}
 {% block content %}
-<h2>Registrar Recepción de Guía</h2>
-
-<form action="/registrar_recepcion" method="POST" class="mt-4">
+<h2>Registrar Recepción (Entrega o Devolución)</h2>
+<form method="POST">
     <div class="mb-3">
         <label for="numero_guia" class="form-label">Número de Guía</label>
-        <input type="text" name="numero_guia" id="numero_guia" class="form-control" required>
+        <input type="text" class="form-control" id="numero_guia" name="numero_guia" required />
     </div>
     <div class="mb-3">
-        <label for="estado" class="form-label">Tipo de Evento</label>
-        <select name="estado" id="estado" class="form-select" required>
-            <option value="ENTREGADA">Entrega</option>
-            <option value="DEVUELTA">Devolución</option>
+        <label for="tipo_evento" class="form-label">Tipo de Evento</label>
+        <select id="tipo_evento" name="tipo_evento" class="form-select" required onchange="mostrarMotivo(this.value)">
+            <option value="" selected disabled>Seleccione tipo de evento</option>
+            <option value="ENTREGA">Entrega</option>
+            <option value="DEVOLUCION">Devolución</option>
         </select>
     </div>
-    <div class="mb-3" id="motivo-container" style="display:none;">
+    <div class="mb-3" id="motivo_div" style="display:none;">
         <label for="motivo" class="form-label">Motivo de Devolución</label>
-        <select name="motivo" id="motivo" class="form-select">
-            <option value="">Seleccione motivo</option>
+        <select id="motivo" name="motivo" class="form-select">
+            <option value="" selected disabled>Seleccione motivo</option>
             <option value="INCORRECTA">Incorrecta</option>
             <option value="INCOMPLETA">Incompleta</option>
             <option value="REHUSADO">Rehusado</option>
@@ -26,19 +26,19 @@
             <option value="TRASLADO">Traslado</option>
         </select>
     </div>
-    <button type="submit" class="btn btn-primary">Registrar Recepción</button>
-    <a href="/" class="btn btn-secondary ms-2">Volver al Inicio</a>
+    <button type="submit" class="btn btn-primary">Registrar</button>
+    <a href="{{ url_for('index') }}" class="btn btn-secondary ms-2">Volver al Inicio</a>
 </form>
 
 <script>
-document.getElementById("estado").addEventListener("change", function(){
-    const motivoCont = document.getElementById("motivo-container");
-    if(this.value === "DEVUELTA"){
-        motivoCont.style.display = "block";
+function mostrarMotivo(tipo) {
+    if(tipo === 'DEVOLUCION') {
+        document.getElementById('motivo_div').style.display = 'block';
+        document.getElementById('motivo').required = true;
     } else {
-        motivoCont.style.display = "none";
-        document.getElementById("motivo").value = "";
+        document.getElementById('motivo_div').style.display = 'none';
+        document.getElementById('motivo').required = false;
     }
-});
+}
 </script>
 {% endblock %}
