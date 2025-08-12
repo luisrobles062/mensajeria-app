@@ -4,8 +4,8 @@
 <h2>Cargar Base de Guías desde Excel</h2>
 <form method="POST" enctype="multipart/form-data">
     <div class="mb-3">
-        <label for="archivo" class="form-label">Archivo Excel (.xlsx)</label>
-        <input class="form-control" type="file" id="archivo" name="archivo" accept=".xlsx" required />
+        <label for="archivo_excel" class="form-label">Archivo Excel (.xlsx)</label>
+        <input class="form-control" type="file" id="archivo_excel" name="archivo_excel" accept=".xlsx" required />
     </div>
     <button type="submit" class="btn btn-primary">Cargar</button>
     <a href="{{ url_for('index') }}" class="btn btn-secondary ms-2">Volver al Inicio</a>
