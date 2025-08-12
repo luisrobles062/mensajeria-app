@@ -3,21 +3,21 @@
 {% block content %}
 <h2>Liquidación por Mensajero</h2>
 
-<form action="/liquidacion" method="POST" class="row gy-3 align-items-end mb-4">
+<form action="{{ url_for('liquidacion') }}" method="POST" class="row gy-3 align-items-end mb-4">
     <div class="col-md-4">
         <label for="fecha_inicio" class="form-label">Fecha Inicio</label>
-        <input type="date" id="fecha_inicio" name="fecha_inicio" class="form-control" value="{{ fecha_inicio }}">
+        <input type="date" id="fecha_inicio" name="fecha_inicio" class="form-control" value="{{ fecha_inicio or '' }}" required>
     </div>
     <div class="col-md-4">
         <label for="fecha_fin" class="form-label">Fecha Fin</label>
-        <input type="date" id="fecha_fin" name="fecha_fin" class="form-control" value="{{ fecha_fin }}">
+        <input type="date" id="fecha_fin" name="fecha_fin" class="form-control" value="{{ fecha_fin or '' }}" required>
     </div>
     <div class="col-md-4">
         <button type="submit" class="btn btn-primary">Calcular Liquidación</button>
         {% if liquidaciones %}
         <button type="submit" name="exportar" value="1" class="btn btn-success ms-2">Exportar a Excel</button>
         {% endif %}
-        <a href="/" class="btn btn-secondary ms-2">Volver al Inicio</a>
+        <a href="{{ url_for('index') }}" class="btn btn-secondary ms-2">Volver al Inicio</a>
     </div>
 </form>
 
