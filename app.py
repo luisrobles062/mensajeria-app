@@ -1,71 +1,143 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, send_file
-from flask_sqlalchemy import SQLAlchemy
+from flask import Flask, render_template, request, redirect, url_for, flash
 import pandas as pd
-import io
-import matplotlib.pyplot as plt
-import base64
+import os
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from datetime import datetime
 
 app = Flask(__name__)
-app.secret_key = 'tu_clave_secreta_aqui'
+app.secret_key = 'secreto'
+DATA_DIR = 'data'
+os.makedirs(DATA_DIR, exist_ok=True)
 
-# Límite para subida de archivos (50 MB)
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
+# Cadena conexión PostgreSQL Neon
+DATABASE_URL = "postgresql://neondb_owner:npg_3owpfIUOAT0a@ep-soft-bush-acv2a8v4-pooler.sa-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 
-# Configura aquí tu URI de PostgreSQL
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://neondb_owner:npg_3owpfIUOAT0a@ep-soft-bush-acv2a8v4-pooler.sa-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Clases para Zona y Mensajero con tarifa
+class Zona:
+    def __init__(self, nombre, tarifa):
+        self.nombre = nombre
+        self.tarifa = tarifa
 
-db = SQLAlchemy(app)
+class Mensajero:
+    def __init__(self, nombre, zona):
+        self.nombre = nombre
+        self.zona = zona
 
-# -------------- MODELOS -----------------
+# Inicializamos listas (se cargarán desde DB)
+zonas = []
+mensajeros = []
+guias = pd.DataFrame(columns=['remitente', 'numero_guia', 'destinatario', 'direccion', 'ciudad'])
+despachos = []
+recepciones = []
+recogidas = []
 
-class Zona(db.Model):
-    __tablename__ = 'zonas'
-    id = db.Column(db.Integer, primary_key=True)
-    nombre = db.Column(db.String(100), unique=True, nullable=False)
-    tarifa = db.Column(db.Float, nullable=False)
-    mensajeros = db.relationship('Mensajero', backref='zona', lazy=True)
+# ---------- FUNCIONES PARA BASE DE DATOS ----------
 
-class Mensajero(db.Model):
-    __tablename__ = 'mensajeros'
-    id = db.Column(db.Integer, primary_key=True)
-    nombre = db.Column(db.String(100), unique=True, nullable=False)
-    zona_id = db.Column(db.Integer, db.ForeignKey('zonas.id'), nullable=False)
-    despachos = db.relationship('Despacho', backref='mensajero', lazy=True)
+def get_db_connection():
+    conn = psycopg2.connect(DATABASE_URL)
+    return conn
 
-class Guia(db.Model):
-    __tablename__ = 'guias'
-    numero_guia = db.Column(db.String(50), primary_key=True)
-    remitente = db.Column(db.String(200))
-    destinatario = db.Column(db.String(200))
-    direccion = db.Column(db.String(300))
-    ciudad = db.Column(db.String(100))
+def crear_tablas():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS zonas (
+            nombre VARCHAR(255) PRIMARY KEY,
+            tarifa NUMERIC NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS mensajeros (
+            nombre VARCHAR(255) PRIMARY KEY,
+            zona VARCHAR(255) REFERENCES zonas(nombre)
+        );
+        CREATE TABLE IF NOT EXISTS guias (
+            remitente VARCHAR(255),
+            numero_guia VARCHAR(255) PRIMARY KEY,
+            destinatario VARCHAR(255),
+            direccion VARCHAR(255),
+            ciudad VARCHAR(255)
+        );
+        CREATE TABLE IF NOT EXISTS despachos (
+            numero_guia VARCHAR(255) PRIMARY KEY REFERENCES guias(numero_guia),
+            mensajero VARCHAR(255) REFERENCES mensajeros(nombre),
+            zona VARCHAR(255),
+            fecha TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS recepciones (
+            numero_guia VARCHAR(255) PRIMARY KEY REFERENCES guias(numero_guia),
+            tipo VARCHAR(50),
+            motivo TEXT,
+            fecha TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS recogidas (
+            id SERIAL PRIMARY KEY,
+            numero_guia VARCHAR(255),
+            fecha DATE,
+            observaciones TEXT
+        );
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
 
-class Despacho(db.Model):
-    __tablename__ = 'despachos'
-    id = db.Column(db.Integer, primary_key=True)
-    numero_guia = db.Column(db.String(50), db.ForeignKey('guias.numero_guia'), nullable=False)
-    mensajero_id = db.Column(db.Integer, db.ForeignKey('mensajeros.id'), nullable=False)
-    fecha_despacho = db.Column(db.DateTime, default=datetime.utcnow)
-    recepciones = db.relationship('Recepcion', backref='despacho', lazy=True)
+def cargar_datos_desde_db():
+    global zonas, mensajeros, guias, despachos, recepciones, recogidas
 
-class Recepcion(db.Model):
-    __tablename__ = 'recepciones'
-    id = db.Column(db.Integer, primary_key=True)
-    despacho_id = db.Column(db.Integer, db.ForeignKey('despachos.id'), nullable=False)
-    tipo_evento = db.Column(db.String(20))  # ENTREGA o DEVOLUCION
-    motivo = db.Column(db.String(50), nullable=True)  # motivo si es devolución
-    fecha_recepcion = db.Column(db.DateTime, default=datetime.utcnow)
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
 
-class Recogida(db.Model):
-    __tablename__ = 'recogidas'
-    id = db.Column(db.Integer, primary_key=True)
-    numero_interno = db.Column(db.String(50), unique=True, nullable=False)
-    fecha = db.Column(db.Date)
-    observaciones = db.Column(db.Text)
+    # Cargar zonas
+    zonas = []
+    cur.execute('SELECT nombre, tarifa FROM zonas;')
+    for row in cur.fetchall():
+        zonas.append(Zona(row['nombre'], float(row['tarifa'])))
 
-# -------------- RUTAS -------------------
+    # Cargar mensajeros
+    mensajeros = []
+    cur.execute('SELECT nombre, zona FROM mensajeros;')
+    for row in cur.fetchall():
+        zona_obj = next((z for z in zonas if z.nombre == row['zona']), None)
+        mensajeros.append(Mensajero(row['nombre'], zona_obj))
+
+    # Cargar guias
+    guias = pd.read_sql_query('SELECT remitente, numero_guia, destinatario, direccion, ciudad FROM guias;', conn)
+
+    # Cargar despachos
+    despachos = []
+    cur.execute('SELECT numero_guia, mensajero, zona, fecha FROM despachos;')
+    for row in cur.fetchall():
+        despachos.append(row)
+
+    # Cargar recepciones
+    recepciones = []
+    cur.execute('SELECT numero_guia, tipo, motivo, fecha FROM recepciones;')
+    for row in cur.fetchall():
+        recepciones.append(row)
+
+    # Cargar recogidas
+    recogidas = []
+    cur.execute('SELECT id, numero_guia, fecha, observaciones FROM recogidas;')
+    for row in cur.fetchall():
+        recogidas.append(row)
+
+    cur.close()
+    conn.close()
+
+def ejecutar_query(query, params=()):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(query, params)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+# Crear tablas al iniciar app
+crear_tablas()
+
+# Cargar datos al iniciar app
+cargar_datos_desde_db()
+
+# ---------- RUTAS ----------
 
 @app.route('/')
 def index():
@@ -73,42 +145,33 @@ def index():
 
 @app.route('/cargar_base', methods=['GET', 'POST'])
 def cargar_base():
+    global guias
     if request.method == 'POST':
-        archivo = request.files.get('archivo')
-        if not archivo:
-            flash('No se seleccionó ningún archivo', 'danger')
-            return redirect(request.url)
-        try:
+        archivo = request.files.get('archivo_excel')
+        if archivo:
             df = pd.read_excel(archivo)
-            columnas_necesarias = {'numero_guia', 'remitente', 'destinatario', 'direccion', 'ciudad'}
-            columnas_lower = set(col.lower() for col in df.columns)
-            if not columnas_necesarias.issubset(columnas_lower):
-                flash(f'El archivo debe contener estas columnas: {columnas_necesarias}', 'danger')
-                return redirect(request.url)
-            df.columns = [col.lower() for col in df.columns]
-            for _, row in df.iterrows():
-                numero = str(row['numero_guia'])
-                guia = Guia.query.get(numero)
-                if not guia:
-                    guia = Guia(
-                        numero_guia=numero,
-                        remitente=row['remitente'],
-                        destinatario=row['destinatario'],
-                        direccion=row['direccion'],
-                        ciudad=row['ciudad']
-                    )
-                    db.session.add(guia)
-                else:
-                    guia.remitente = row['remitente']
-                    guia.destinatario = row['destinatario']
-                    guia.direccion = row['direccion']
-                    guia.ciudad = row['ciudad']
-            db.session.commit()
-            flash('Base de guías cargada correctamente.', 'success')
-            return redirect(url_for('index'))
-        except Exception as e:
-            flash(f'Error al procesar archivo: {e}', 'danger')
-            return redirect(request.url)
+            required_cols = ['remitente', 'numero_guia', 'destinatario', 'direccion', 'ciudad']
+            if all(col in df.columns for col in required_cols):
+                conn = get_db_connection()
+                cur = conn.cursor()
+                for _, row in df.iterrows():
+                    cur.execute('SELECT 1 FROM guias WHERE numero_guia = %s', (str(row['numero_guia']),))
+                    existe = cur.fetchone()
+                    if not existe:
+                        cur.execute(
+                            'INSERT INTO guias (remitente, numero_guia, destinatario, direccion, ciudad) VALUES (%s, %s, %s, %s, %s)',
+                            (row['remitente'], str(row['numero_guia']), row['destinatario'], row['direccion'], row['ciudad'])
+                        )
+                conn.commit()
+                cur.close()
+                conn.close()
+
+                guias = pd.read_sql_query('SELECT remitente, numero_guia, destinatario, direccion, ciudad FROM guias;', get_db_connection())
+
+                archivo.save(os.path.join(DATA_DIR, archivo.filename))
+                flash('Base de datos cargada correctamente.', 'success')
+            else:
+                flash('El archivo debe contener las columnas: ' + ", ".join(required_cols), 'danger')
     return render_template('cargar_base.html')
 
 @app.route('/registrar_zona', methods=['GET', 'POST'])
@@ -116,243 +179,307 @@ def registrar_zona():
     if request.method == 'POST':
         nombre = request.form.get('nombre')
         tarifa = request.form.get('tarifa')
-        if not nombre or not tarifa:
-            flash('Debe ingresar nombre y tarifa', 'danger')
-            return redirect(request.url)
-        try:
-            tarifa_val = float(tarifa)
-            if tarifa_val < 0:
-                raise ValueError()
-        except:
-            flash('Tarifa debe ser un número positivo', 'danger')
-            return redirect(request.url)
-        if Zona.query.filter_by(nombre=nombre).first():
-            flash('Ya existe una zona con ese nombre', 'danger')
-            return redirect(request.url)
-        nueva_zona = Zona(nombre=nombre, tarifa=tarifa_val)
-        db.session.add(nueva_zona)
-        db.session.commit()
-        flash('Zona registrada con éxito', 'success')
-        return redirect(url_for('index'))
-    return render_template('registrar_zona.html')
+        if nombre and tarifa:
+            try:
+                tarifa_float = float(tarifa)
+                conn = get_db_connection()
+                cur = conn.cursor()
+                cur.execute('SELECT 1 FROM zonas WHERE nombre = %s', (nombre,))
+                existe = cur.fetchone()
+                if existe:
+                    flash('La zona ya existe', 'warning')
+                else:
+                    cur.execute('INSERT INTO zonas (nombre, tarifa) VALUES (%s, %s)', (nombre, tarifa_float))
+                    conn.commit()
+                    flash(f'Zona {nombre} registrada con tarifa {tarifa_float}', 'success')
+                cur.close()
+                conn.close()
+            except ValueError:
+                flash('Tarifa inválida, debe ser un número', 'danger')
+        else:
+            flash('Debe completar todos los campos', 'danger')
+        cargar_datos_desde_db()
+    return render_template('registrar_zona.html', zonas=zonas)
 
 @app.route('/registrar_mensajero', methods=['GET', 'POST'])
 def registrar_mensajero():
-    zonas = Zona.query.order_by(Zona.nombre).all()
     if request.method == 'POST':
         nombre = request.form.get('nombre')
-        zona_id = request.form.get('zona_id')
-        if not nombre or not zona_id:
-            flash('Debe ingresar nombre y zona', 'danger')
-            return redirect(request.url)
-        if Mensajero.query.filter_by(nombre=nombre).first():
-            flash('Ya existe un mensajero con ese nombre', 'danger')
-            return redirect(request.url)
-        nueva = Mensajero(nombre=nombre, zona_id=zona_id)
-        db.session.add(nueva)
-        db.session.commit()
-        flash('Mensajero registrado con éxito', 'success')
-        return redirect(url_for('index'))
-    return render_template('registrar_mensajero.html', zonas=zonas)
+        zona_nombre = request.form.get('zona')
+        if nombre and zona_nombre:
+            conn = get_db_connection()
+            zona_obj = next((z for z in zonas if z.nombre == zona_nombre), None)
+            if not zona_obj:
+                flash('Zona no encontrada', 'danger')
+                return redirect(url_for('registrar_mensajero'))
+
+            cur = conn.cursor()
+            cur.execute('SELECT 1 FROM mensajeros WHERE nombre = %s', (nombre,))
+            existe = cur.fetchone()
+            if existe:
+                flash('El mensajero ya existe', 'warning')
+            else:
+                cur.execute('INSERT INTO mensajeros (nombre, zona) VALUES (%s, %s)', (nombre, zona_nombre))
+                conn.commit()
+                flash(f'Mensajero {nombre} registrado en zona {zona_nombre}', 'success')
+            cur.close()
+            conn.close()
+            cargar_datos_desde_db()
+        else:
+            flash('Debe completar todos los campos', 'danger')
+    return render_template('registrar_mensajero.html', zonas=zonas, mensajeros=mensajeros)
 
 @app.route('/despachar_guias', methods=['GET', 'POST'])
 def despachar_guias():
-    zonas = Zona.query.order_by(Zona.nombre).all()
     if request.method == 'POST':
-        mensajero_id = request.form.get('mensajero_id')
-        guias_input = request.form.get('guias_input')
-        if not mensajero_id or not guias_input:
-            flash('Debe seleccionar mensajero y guías', 'danger')
-            return redirect(request.url)
-        guias = [g.strip() for g in guias_input.split('\n') if g.strip()]
-        errores = []
-        despachadas = []
-        for num_guia in guias:
-            numero_guia_str = str(num_guia)
-            guia = Guia.query.get(numero_guia_str)
-            if not guia:
-                errores.append(f'Guía {numero_guia_str} no existe en base')
-                continue
-            ya_despachada = Despacho.query.filter_by(numero_guia=numero_guia_str).first()
-            if ya_despachada:
-                errores.append(f'Guía {numero_guia_str} ya fue despachada')
-                continue
-            despacho = Despacho(numero_guia=numero_guia_str, mensajero_id=mensajero_id)
-            db.session.add(despacho)
-            despachadas.append(numero_guia_str)
-        db.session.commit()
-        if errores:
-            flash('Errores: ' + '; '.join(errores), 'danger')
-        if despachadas:
-            flash(f'Guías despachadas: {", ".join(despachadas)}', 'success')
-        return redirect(url_for('index'))
-    return render_template('despachar_guias.html', zonas=zonas)
+        mensajero_nombre = request.form.get('mensajero')
+        guias_input = request.form.get('guias', '')
+        guias_list = [g.strip() for g in guias_input.strip().splitlines() if g.strip()]
+        fecha = datetime.now()
 
-@app.route('/consultar_estado', methods=['GET', 'POST'])
-def consultar_estado():
-    resultados = []
-    if request.method == 'POST':
-        guias_input = request.form.get('guias_input')
-        if not guias_input:
-            flash('Debe ingresar números de guía', 'danger')
-            return redirect(request.url)
-        guias = [g.strip() for g in guias_input.split('\n') if g.strip()]
-        for num_guia in guias:
-            numero_guia_str = str(num_guia)
-            guia = Guia.query.get(numero_guia_str)
-            if not guia:
-                resultados.append({'numero_guia': numero_guia_str, 'estado': 'FALTANTE'})
+        mensajero_obj = next((m for m in mensajeros if m.nombre == mensajero_nombre), None)
+
+        if not mensajero_obj:
+            flash('Mensajero no encontrado', 'danger')
+            return redirect(url_for('despachar_guias'))
+
+        zona_obj = mensajero_obj.zona
+
+        errores = []
+        exito = []
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        for numero in guias_list:
+            cur.execute('SELECT 1 FROM guias WHERE numero_guia = %s', (numero,))
+            existe_guia = cur.fetchone()
+            if not existe_guia:
+                errores.append(f'Guía {numero} no existe (FALTANTE)')
                 continue
-            despacho = Despacho.query.filter_by(numero_guia=numero_guia_str).first()
-            if not despacho:
-                resultados.append({'numero_guia': numero_guia_str, 'estado': 'EN VERIFICACIÓN'})
+
+            cur.execute('SELECT * FROM despachos WHERE numero_guia = %s', (numero,))
+            despacho_existente = cur.fetchone()
+            cur.execute('SELECT * FROM recepciones WHERE numero_guia = %s', (numero,))
+            recepcion_existente = cur.fetchone()
+
+            if recepcion_existente:
+                errores.append(f'Guía {numero} ya fue {recepcion_existente[1]}')  # tipo
                 continue
-            recepcion = Recepcion.query.filter_by(despacho_id=despacho.id).order_by(Recepcion.fecha_recepcion.desc()).first()
-            if recepcion:
-                estado = recepcion.tipo_evento
-                motivo = recepcion.motivo
-            else:
-                estado = 'DESPACHADA'
-                motivo = ''
-            resultados.append({
-                'numero_guia': numero_guia_str,
-                'estado': estado,
-                'motivo': motivo,
-                'mensajero': despacho.mensajero.nombre,
-                'zona': despacho.mensajero.zona.nombre,
-                'fecha_despacho': despacho.fecha_despacho.strftime('%Y-%m-%d %H:%M'),
-            })
-    return render_template('consultar_estado.html', resultados=resultados)
+
+            if despacho_existente:
+                errores.append(f'Guía {numero} ya fue despachada a {despacho_existente[1]}')  # mensajero
+                continue
+
+            cur.execute(
+                'INSERT INTO despachos (numero_guia, mensajero, zona, fecha) VALUES (%s, %s, %s, %s)',
+                (numero, mensajero_nombre, zona_obj.nombre, fecha)
+            )
+            exito.append(f'Guía {numero} despachada a {mensajero_nombre}')
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        if errores:
+            flash("Errores:<br>" + "<br>".join(errores), 'danger')
+        if exito:
+            flash("Despachos exitosos:<br>" + "<br>".join(exito), 'success')
+
+        cargar_datos_desde_db()
+        return redirect(url_for('ver_despacho'))
+
+    return render_template('despachar_guias.html', mensajeros=[m.nombre for m in mensajeros], zonas=[z.nombre for z in zonas])
+
+@app.route('/ver_despacho')
+def ver_despacho():
+    return render_template('ver_despacho.html', despachos=despachos)
 
 @app.route('/registrar_recepcion', methods=['GET', 'POST'])
 def registrar_recepcion():
     if request.method == 'POST':
-        numero_guia = str(request.form.get('numero_guia'))
-        tipo_evento = request.form.get('tipo_evento')
-        motivo = request.form.get('motivo') if tipo_evento == 'DEVOLUCION' else None
-        despacho = Despacho.query.filter_by(numero_guia=numero_guia).first()
-        if not despacho:
-            flash('Esta guía no ha sido despachada', 'danger')
-            return redirect(request.url)
-        recepcion = Recepcion(
-            despacho_id=despacho.id,
-            tipo_evento=tipo_evento,
-            motivo=motivo,
-            fecha_recepcion=datetime.utcnow()
+        numero_guia = request.form.get('numero_guia')
+        tipo = request.form.get('estado')  # 'ENTREGADA' o 'DEVUELTA'
+        motivo = request.form.get('motivo', '')
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute('SELECT 1 FROM guias WHERE numero_guia = %s', (numero_guia,))
+        existe_guia = cur.fetchone()
+        if not existe_guia:
+            flash('Número de guía no existe en la base (FALTANTE)', 'danger')
+            cur.close()
+            conn.close()
+            return redirect(url_for('registrar_recepcion'))
+
+        cur.execute('SELECT * FROM despachos WHERE numero_guia = %s', (numero_guia,))
+        despacho_existente = cur.fetchone()
+        if not despacho_existente:
+            flash('La guía no ha sido despachada aún', 'warning')
+            cur.close()
+            conn.close()
+            return redirect(url_for('registrar_recepcion'))
+
+        cur.execute('SELECT * FROM recepciones WHERE numero_guia = %s', (numero_guia,))
+        recepcion_existente = cur.fetchone()
+        if recepcion_existente:
+            flash('La recepción para esta guía ya está registrada', 'warning')
+            cur.close()
+            conn.close()
+            return redirect(url_for('registrar_recepcion'))
+
+        fecha = datetime.now()
+
+        cur.execute(
+            'INSERT INTO recepciones (numero_guia, tipo, motivo, fecha) VALUES (%s, %s, %s, %s)',
+            (numero_guia, tipo, motivo if tipo == 'DEVUELTA' else '', fecha)
         )
-        db.session.add(recepcion)
-        db.session.commit()
-        flash(f'Recepción registrada: {tipo_evento}', 'success')
-        return redirect(url_for('index'))
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        flash(f'Recepción de guía {numero_guia} registrada como {tipo}', 'success')
+        cargar_datos_desde_db()
+        return redirect(url_for('registrar_recepcion'))
+
     return render_template('registrar_recepcion.html')
+
+@app.route('/consultar_estado', methods=['GET', 'POST'])
+def consultar_estado():
+    resultado = None
+    if request.method == 'POST':
+        numero_guia = request.form.get('numero_guia', '').strip()
+        if not numero_guia:
+            flash('Debe ingresar un número de guía', 'warning')
+            return redirect(url_for('consultar_estado'))
+
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+
+        cur.execute('SELECT 1 FROM guias WHERE numero_guia = %s', (numero_guia,))
+        existe_guia = cur.fetchone()
+        if not existe_guia:
+            resultado = {
+                'numero_guia': numero_guia,
+                'estado': 'FALTANTE',
+                'motivo': '',
+                'mensajero': '',
+                'zona': '',
+                'fecha': ''
+            }
+        else:
+            cur.execute('SELECT * FROM despachos WHERE numero_guia = %s', (numero_guia,))
+            despacho = cur.fetchone()
+            cur.execute('SELECT * FROM recepciones WHERE numero_guia = %s', (numero_guia,))
+            recepcion = cur.fetchone()
+
+            if recepcion:
+                estado = recepcion['tipo']
+                motivo = recepcion['motivo']
+                mensajero = despacho['mensajero'] if despacho else ''
+                zona = despacho['zona'] if despacho else ''
+                fecha = recepcion['fecha']
+            elif despacho:
+                estado = 'DESPACHADA'
+                motivo = ''
+                mensajero = despacho['mensajero']
+                zona = despacho['zona']
+                fecha = despacho['fecha']
+            else:
+                estado = 'EN VERIFICACION'
+                motivo = ''
+                mensajero = ''
+                zona = ''
+                fecha = ''
+
+            resultado = {
+                'numero_guia': numero_guia,
+                'estado': estado,
+                'motivo': motivo,
+                'mensajero': mensajero,
+                'zona': zona,
+                'fecha': fecha
+            }
+        cur.close()
+        conn.close()
+    return render_template('consultar_estado.html', resultado=resultado)
 
 @app.route('/liquidacion', methods=['GET', 'POST'])
 def liquidacion():
-    liquidaciones = []
-    chart_png = None
-    fecha_inicio = None
-    fecha_fin = None
+    liquidacion = None
     if request.method == 'POST':
+        mensajero_nombre = request.form.get('mensajero')
         fecha_inicio = request.form.get('fecha_inicio')
         fecha_fin = request.form.get('fecha_fin')
-        exportar = request.form.get('exportar')
+
         try:
-            fi = datetime.strptime(fecha_inicio, '%Y-%m-%d')
-            ff = datetime.strptime(fecha_fin, '%Y-%m-%d')
+            dt_inicio = datetime.strptime(fecha_inicio, '%Y-%m-%d')
+            dt_fin = datetime.strptime(fecha_fin, '%Y-%m-%d')
         except Exception:
-            flash('Fechas inválidas', 'danger')
-            return redirect(request.url)
-        query = db.session.query(
-            Mensajero.nombre.label('mensajero'),
-            db.func.count(Despacho.id).label('cantidad'),
-            db.func.sum(Zona.tarifa).label('total')
-        ).join(Zona, Mensajero.zona_id == Zona.id)\
-         .join(Despacho, Despacho.mensajero_id == Mensajero.id)\
-         .filter(Despacho.fecha_despacho >= fi, Despacho.fecha_despacho <= ff)\
-         .group_by(Mensajero.nombre)
-        liquidaciones = query.all()
-        if exportar:
-            df = pd.DataFrame([(l.mensajero, l.cantidad, l.total) for l in liquidaciones], columns=['Mensajero', 'Cantidad Guías', 'Total (COP)'])
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.to_excel(writer, index=False, sheet_name='Liquidacion')
-            output.seek(0)
-            return send_file(output, download_name='liquidacion.xlsx', as_attachment=True)
-        if liquidaciones:
-            nombres = [l.mensajero for l in liquidaciones]
-            totales = [l.total for l in liquidaciones]
-            plt.figure(figsize=(8,4))
-            plt.bar(nombres, totales, color='skyblue')
-            plt.xlabel('Mensajero')
-            plt.ylabel('Total (COP)')
-            plt.title('Liquidación por Mensajero')
-            plt.xticks(rotation=45, ha='right')
-            plt.tight_layout()
-            img = io.BytesIO()
-            plt.savefig(img, format='png')
-            plt.close()
-            img.seek(0)
-            chart_png = base64.b64encode(img.getvalue()).decode('utf8')
-    return render_template('liquidacion.html', liquidaciones=liquidaciones, chart_png=chart_png,
-                           fecha_inicio=fecha_inicio, fecha_fin=fecha_fin)
+            flash('Formato de fechas inválido', 'danger')
+            return redirect(url_for('liquidacion'))
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            'SELECT * FROM despachos WHERE mensajero = %s AND fecha::date BETWEEN %s AND %s',
+            (mensajero_nombre, fecha_inicio, fecha_fin)
+        )
+        gui_despachadas = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        cantidad_guias = len(gui_despachadas)
+        mensajero_obj = next((m for m in mensajeros if m.nombre == mensajero_nombre), None)
+        tarifa = mensajero_obj.zona.tarifa if mensajero_obj and mensajero_obj.zona else 0
+        total_pagar = cantidad_guias * tarifa
+
+        liquidacion = {
+            'mensajero': mensajero_nombre,
+            'fecha_inicio': fecha_inicio,
+            'fecha_fin': fecha_fin,
+            'cantidad_guias': cantidad_guias,
+            'total_pagar': total_pagar
+        }
+    return render_template('liquidacion.html', mensajeros=mensajeros, liquidacion=liquidacion)
 
 @app.route('/registrar_recogida', methods=['GET', 'POST'])
 def registrar_recogida():
     if request.method == 'POST':
-        numero_interno = request.form.get('numero_interno')
+        numero_guia = request.form.get('numero_guia', '').strip()
         fecha = request.form.get('fecha')
-        observaciones = request.form.get('observaciones')
-        if not numero_interno or not fecha:
-            flash('Número interno y fecha son obligatorios', 'danger')
-            return redirect(request.url)
-        try:
-            fecha_obj = datetime.strptime(fecha, '%Y-%m-%d').date()
-        except:
-            flash('Fecha inválida', 'danger')
-            return redirect(request.url)
-        if Recogida.query.filter_by(numero_interno=numero_interno).first():
-            flash('Número interno ya registrado', 'danger')
-            return redirect(request.url)
-        recogida = Recogida(numero_interno=numero_interno, fecha=fecha_obj, observaciones=observaciones)
-        db.session.add(recogida)
-        db.session.commit()
-        flash('Recogida registrada', 'success')
-        return redirect(url_for('ver_recogidas'))
+        observaciones = request.form.get('observaciones', '').strip()
+
+        if not numero_guia or not fecha:
+            flash('Debe completar número de guía y fecha', 'danger')
+            return redirect(url_for('registrar_recogida'))
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            'INSERT INTO recogidas (numero_guia, fecha, observaciones) VALUES (%s, %s, %s)',
+            (numero_guia, fecha, observaciones)
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        flash(f'Recogida registrada para la guía {numero_guia}', 'success')
+        cargar_datos_desde_db()
+        return redirect(url_for('registrar_recogida'))
+
     return render_template('registrar_recogida.html')
 
 @app.route('/ver_recogidas')
 def ver_recogidas():
-    recogidas = Recogida.query.order_by(Recogida.fecha.desc()).all()
-    return render_template('ver_recogidas.html', recogidas=recogidas)
+    filtro_numero = request.args.get('filtro_numero', '').strip().lower()
 
-@app.route('/ver_despacho')
-def ver_despacho():
-    despachos = Despacho.query.order_by(Despacho.fecha_despacho.desc()).all()
-    return render_template('ver_despacho.html', despachos=despachos)
+    if filtro_numero:
+        recogidas_filtradas = [r for r in recogidas if filtro_numero in r['numero_guia'].lower()]
+    else:
+        recogidas_filtradas = recogidas
 
-@app.route('/ver_guias')
-def ver_guias():
-    guias = Guia.query.order_by(Guia.numero_guia).all()
-    return render_template('ver_guias.html', guias=guias)
-
-@app.route('/verificacion_entrada', methods=['GET', 'POST'])
-def verificacion_entrada():
-    if request.method == 'POST':
-        numero_guia = str(request.form.get('numero_guia'))
-        guia = Guia.query.get(numero_guia)
-        if not guia:
-            flash('Guía FALTANTE', 'danger')
-            return redirect(request.url)
-        flash(f'Guía {numero_guia} existe en la base', 'success')
-        return redirect(request.url)
-    return render_template('verificacion_entrada.html')
-
-# Context processor para usar la fecha actual en templates
-@app.context_processor
-def inject_now():
-    return {'now': datetime.utcnow()}
+    return render_template('ver_recogidas.html', recogidas=recogidas_filtradas)
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
     app.run(debug=True)
