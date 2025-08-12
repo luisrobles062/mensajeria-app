@@ -1,11 +1,40 @@
-{% extends "base.html" %}
-{% block title %}Cargar base{% endblock %}
-{% block content %}
-  <h2>Cargar base de guías (Excel)</h2>
-  <form method="post" enctype="multipart/form-data" action="{{ url_for('cargar_base') }}">
-    <label>Archivo Excel (.xls/.xlsx):</label><br>
-    <input type="file" name="archivo" accept=".xls,.xlsx" required><br><br>
-    <button type="submit">Subir y procesar</button>
-  </form>
-  <p>Columnas requeridas: <code>numero_guia, remitente, destinatario, direccion, ciudad</code>. La columna <code>zona</code> es opcional.</p>
-{% endblock %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <title>Cargar base de guías</title>
+</head>
+<body>
+    <h1>Cargar base de guías (Excel)</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <ul>
+          {% for category, message in messages %}
+            <li style="color: {% if category == 'error' %}red{% elif category == 'success' %}green{% else %}black{% endif %};">
+              {{ message }}
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
+    <form method="post" enctype="multipart/form-data">
+        <label for="archivo">Seleccione archivo Excel (.xlsx):</label>
+        <input type="file" id="archivo" name="archivo" accept=".xlsx" required />
+        <br><br>
+        <button type="submit">Cargar</button>
+    </form>
+
+    <p>El archivo Excel debe contener las columnas:</p>
+    <ul>
+        <li>remitente</li>
+        <li>numero_guia</li>
+        <li>destinatario</li>
+        <li>direccion</li>
+        <li>ciudad</li>
+    </ul>
+
+    <p><a href="{{ url_for('index') }}">Volver al inicio</a></p>
+</body>
+</html>
