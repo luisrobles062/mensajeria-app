@@ -1,22 +1,49 @@
-{% extends "base.html" %}
-{% block title %}Registrar Mensajero - CERTISERVI{% endblock %}
-{% block content %}
-<h2>Registrar Nuevo Mensajero</h2>
-<form method="POST">
-    <div class="mb-3">
-        <label for="nombre" class="form-label">Nombre del Mensajero</label>
-        <input type="text" class="form-control" id="nombre" name="nombre" required />
-    </div>
-    <div class="mb-3">
-        <label for="zona_id" class="form-label">Zona</label>
-        <select id="zona_id" name="zona_id" class="form-select" required>
-            <option value="" selected disabled>Seleccione una zona</option>
-            {% for zona in zonas %}
-            <option value="{{ zona.id }}">{{ zona.nombre }}</option>
-            {% endfor %}
-        </select>
-    </div>
-    <button type="submit" class="btn btn-primary">Registrar Mensajero</button>
-    <a href="{{ url_for('index') }}" class="btn btn-secondary ms-2">Volver al Inicio</a>
-</form>
-{% endblock %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <title>Registrar Mensajero</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+</head>
+<body>
+<div class="container mt-4">
+    <h2>Registrar Mensajero</h2>
+    <a href="{{ url_for('index') }}" class="btn btn-secondary mb-3">Volver al inicio</a>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{category}}">{{ message|safe }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <form method="post">
+        <div class="mb-3">
+            <label for="nombre" class="form-label">Nombre del Mensajero</label>
+            <input type="text" class="form-control" id="nombre" name="nombre" required>
+        </div>
+        <div class="mb-3">
+            <label for="zona" class="form-label">Zona</label>
+            <select class="form-select" id="zona" name="zona" required>
+                <option value="" selected disabled>Seleccione una zona</option>
+                {% for zona in zonas %}
+                    <option value="{{ zona.nombre }}">{{ zona.nombre }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary">Registrar Mensajero</button>
+    </form>
+
+    <hr>
+    <h4>Mensajeros Registrados</h4>
+    <ul>
+        {% for mensajero in mensajeros %}
+            <li>{{ mensajero.nombre }} — Zona: {{ mensajero.zona.nombre if mensajero.zona else 'N/A' }}</li>
+        {% else %}
+            <li>No hay mensajeros registrados.</li>
+        {% endfor %}
+    </ul>
+</div>
+</body>
+</html>
