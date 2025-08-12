@@ -1,14 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Verificación de Correo Entrante - CERTISERVI{% endblock %}
+{% block title %}Verificación entrada{% endblock %}
 {% block content %}
-<h2>Verificación de Correo Entrante</h2>
-
-<form action="/verificacion_entrada" method="POST" class="mt-4">
-    <div class="mb-3">
-        <label for="numero_guia" class="form-label">Número de Guía</label>
-        <input type="text" name="numero_guia" id="numero_guia" class="form-control" autofocus required>
-    </div>
-    <button type="submit" class="btn btn-primary">Validar Guía</button>
-    <a href="/" class="btn btn-secondary ms-2">Volver al Inicio</a>
-</form>
+  <h2>Verificación de entrada</h2>
+  <form method="post" action="{{ url_for('verificacion_entrada') }}">
+    <label>Número de guía:</label>
+    <input type="text" name="numero_guia" required>
+    <button type="submit">Verificar</button>
+  </form>
+  {% if mensaje %}
+    <p>{{ mensaje }}</p>
+  {% endif %}
 {% endblock %}
