@@ -1,39 +1,22 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8" />
-    <title>Despachar Guías</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
-</head>
-<body>
-<div class="container mt-4">
-    <h2>Despachar Guías</h2>
-    <a href="{{ url_for('index') }}" class="btn btn-secondary mb-3">Volver al inicio</a>
-
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        {% for category, message in messages %}
-          <div class="alert alert-{{category}}">{{ message|safe }}</div>
-        {% endfor %}
-      {% endif %}
-    {% endwith %}
-
-    <form method="post">
-        <div class="mb-3">
-            <label for="mensajero" class="form-label">Mensajero</label>
-            <select class="form-select" id="mensajero" name="mensajero" required>
-                <option value="" selected disabled>Seleccione un mensajero</option>
-                {% for nombre in mensajeros %}
-                    <option value="{{ nombre }}">{{ nombre }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        <div class="mb-3">
-            <label for="guias" class="form-label">Números de Guías (uno por línea)</label>
-            <textarea class="form-control" id="guias" name="guias" rows="6" placeholder="Ingrese números de guía separados por saltos de línea" required></textarea>
-        </div>
-        <button type="submit" class="btn btn-primary">Despachar</button>
-    </form>
-</div>
-</body>
-</html>
+{% extends "base.html" %}
+{% block title %}Despachar guías{% endblock %}
+{% block content %}
+  <h2>Despachar guías</h2>
+  <form method="post" action="{{ url_for('despachar_guias') }}">
+    <label>Guía (pendientes):</label>
+    <select name="numero_guia" required>
+      <option value="">-- seleccionar --</option>
+      {% for g in guias %}
+        <option value="{{ g }}">{{ g }}</option>
+      {% endfor %}
+    </select>
+    <label>Mensajero:</label>
+    <select name="mensajero" required>
+      <option value="">-- seleccionar --</option>
+      {% for m in mensajeros %}
+        <option value="{{ m }}">{{ m }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit">Despachar</button>
+  </form>
+{% endblock %}
