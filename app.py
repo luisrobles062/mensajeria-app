@@ -84,43 +84,37 @@ def cargar_datos_desde_db():
     global zonas, mensajeros, guias, despachos, recepciones, recogidas
 
     conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur = conn.cursor()
 
     # Cargar zonas
     zonas = []
-    cur.execute('SELECT nombre, tarifa FROM zonas;')
-    for row in cur.fetchall():
-        zonas.append(Zona(row['nombre'], float(row['tarifa'])))
+    for row in cur.execute('SELECT nombre, tarifa FROM zonas'):
+        zonas.append(Zona(row['nombre'], row['tarifa']))
 
     # Cargar mensajeros
     mensajeros = []
-    cur.execute('SELECT nombre, zona FROM mensajeros;')
-    for row in cur.fetchall():
+    for row in cur.execute('SELECT nombre, zona FROM mensajeros'):
         zona_obj = next((z for z in zonas if z.nombre == row['zona']), None)
         mensajeros.append(Mensajero(row['nombre'], zona_obj))
 
-    # Cargar guias
-    guias = pd.read_sql_query('SELECT remitente, numero_guia, destinatario, direccion, ciudad FROM guias;', conn)
+    # Cargar guías (usando pandas con la conexión DBAPI2)
+    guias = pd.read_sql_query('SELECT remitente, numero_guia, destinatario, direccion, ciudad FROM guias', conn)
 
     # Cargar despachos
     despachos = []
-    cur.execute('SELECT numero_guia, mensajero, zona, fecha FROM despachos;')
-    for row in cur.fetchall():
-        despachos.append(row)
+    for row in cur.execute('SELECT numero_guia, mensajero, zona, fecha FROM despachos'):
+        despachos.append(dict(row))
 
     # Cargar recepciones
     recepciones = []
-    cur.execute('SELECT numero_guia, tipo, motivo, fecha FROM recepciones;')
-    for row in cur.fetchall():
-        recepciones.append(row)
+    for row in cur.execute('SELECT numero_guia, tipo, motivo, fecha FROM recepciones'):
+        recepciones.append(dict(row))
 
-    # Cargar recogidas
+    # Cargar recogidas SIN columna id
     recogidas = []
-    cur.execute('SELECT id, numero_guia, fecha, observaciones FROM recogidas;')
-    for row in cur.fetchall():
-        recogidas.append(row)
+    for row in cur.execute('SELECT numero_guia, fecha, observaciones FROM recogidas'):
+        recogidas.append(dict(row))
 
-    cur.close()
     conn.close()
 
 def ejecutar_query(query, params=()):
@@ -483,3 +477,4 @@ def ver_recogidas():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
