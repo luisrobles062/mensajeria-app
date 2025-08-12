@@ -1,14 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Cargar Base de Guías - CERTISERVI{% endblock %}
+{% block title %}Cargar Base - CERTISERVI{% endblock %}
 {% block content %}
-<h2>Cargar Base de Guías desde archivo Excel</h2>
-
-<form action="/cargar_base" method="POST" enctype="multipart/form-data" class="mt-4">
+<h2>Cargar Base de Guías desde Excel</h2>
+<form method="POST" enctype="multipart/form-data">
     <div class="mb-3">
-        <label for="archivo_excel" class="form-label">Archivo Excel (.xlsx)</label>
-        <input type="file" name="archivo_excel" id="archivo_excel" class="form-control" accept=".xlsx" required>
+        <label for="archivo" class="form-label">Archivo Excel (.xlsx)</label>
+        <input class="form-control" type="file" id="archivo" name="archivo" accept=".xlsx" required />
     </div>
     <button type="submit" class="btn btn-primary">Cargar</button>
-    <a href="/" class="btn btn-secondary ms-2">Volver al Inicio</a>
+    <a href="{{ url_for('index') }}" class="btn btn-secondary ms-2">Volver al Inicio</a>
 </form>
 {% endblock %}
