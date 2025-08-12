@@ -10,10 +10,11 @@
         <li><a href="{{ url_for('cargar_base') }}">Cargar base de guías (Excel)</a></li>
         <li><a href="{{ url_for('registrar_zona') }}">Registrar zona</a></li>
         <li><a href="{{ url_for('registrar_mensajero') }}">Registrar mensajero</a></li>
-        <li><a href="{{ url_for('despachar') }}">Despachar guías</a></li>
+        <li><a href="{{ url_for('despachar_guias') }}">Despachar guías</a></li> <!-- corregido -->
         <li><a href="{{ url_for('consultar_estado') }}">Consultar estado de guía</a></li>
         <li><a href="{{ url_for('registrar_recepcion') }}">Registrar recepción</a></li>
         <li><a href="{{ url_for('registrar_recogida') }}">Registrar recogida</a></li>
+        <li><a href="{{ url_for('liquidacion') }}">Liquidación</a></li> <!-- agregué esta porque tienes ruta liquidacion -->
     </ul>
 </body>
 </html>
