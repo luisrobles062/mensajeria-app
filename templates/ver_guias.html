@@ -1,27 +1,17 @@
-
-<!doctype html>
-<html>
-<head><title>Guías Cargadas</title></head>
-<body>
-  <h1>Listado de Guías</h1>
+{% extends "base.html" %}
+{% block title %}Ver guías{% endblock %}
+{% block content %}
+  <h2>Guías</h2>
   {% if guias %}
-    <table border="1">
-      <tr>
-        <th>Remitente</th><th>Número Guía</th><th>Destinatario</th><th>Dirección</th><th>Ciudad</th>
-      </tr>
-      {% for guia in guias %}
-      <tr>
-        <td>{{ guia.remitente }}</td>
-        <td>{{ guia.numero_guia }}</td>
-        <td>{{ guia.destinatario }}</td>
-        <td>{{ guia.direccion }}</td>
-        <td>{{ guia.ciudad }}</td>
-      </tr>
+    <table border="1" cellpadding="6">
+      <tr><th>Número</th><th>Remitente</th><th>Destinatario</th><th>Dirección</th><th>Ciudad</th><th>Zona</th><th>Estado</th></tr>
+      {% for g in guias %}
+        <tr>
+          <td>{{ g[0] }}</td><td>{{ g[1] }}</td><td>{{ g[2] }}</td><td>{{ g[3] }}</td><td>{{ g[4] }}</td><td>{{ g[5] }}</td><td>{{ g[6] }}</td>
+        </tr>
       {% endfor %}
     </table>
   {% else %}
-    <p>No hay guías cargadas aún.</p>
+    <p>No hay guías registradas.</p>
   {% endif %}
-  <a href="{{ url_for('index') }}">Volver al Inicio</a>
-</body>
-</html>
+{% endblock %}
