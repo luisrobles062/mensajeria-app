@@ -1,32 +1,11 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8" />
-    <title>Cargar Base de Guías</title>
-</head>
-<body>
-    <h1>Cargar Base de Guías (Excel)</h1>
-
-    {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-        <ul>
-        {% for category, message in messages %}
-            <li style="color: {% if category == 'error' %}red{% elif category == 'success' %}green{% else %}black{% endif %};">
-                {{ message }}
-            </li>
-        {% endfor %}
-        </ul>
-    {% endif %}
-    {% endwith %}
-
-    <form method="POST" enctype="multipart/form-data" action="{{ url_for('cargar_base') }}">
-        <label for="archivo">Archivo Excel:</label>
-        <input type="file" name="archivo" id="archivo" required>
-        <br><br>
-        <button type="submit">Cargar</button>
-    </form>
-
-    <br>
-    <a href="{{ url_for('index') }}">Volver al inicio</a>
-</body>
-</html>
+{% extends "base.html" %}
+{% block title %}Cargar base{% endblock %}
+{% block content %}
+  <h2>Cargar base de guías (Excel)</h2>
+  <form method="post" enctype="multipart/form-data" action="{{ url_for('cargar_base') }}">
+    <label>Archivo Excel (.xls/.xlsx):</label><br>
+    <input type="file" name="archivo" accept=".xls,.xlsx" required><br><br>
+    <button type="submit">Subir y procesar</button>
+  </form>
+  <p>Columnas requeridas: <code>numero_guia, remitente, destinatario, direccion, ciudad</code>. La columna <code>zona</code> es opcional.</p>
+{% endblock %}
