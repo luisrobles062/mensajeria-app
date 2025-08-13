@@ -1,47 +1,56 @@
 <!doctype html>
 <html lang="es">
 <head>
-  <meta charset="utf-8" />
-  <title>{% block title %}Mensajería{% endblock %}</title>
+  <meta charset="utf-8">
+  <title>{% block title %}App de Mensajería{% endblock %}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Tus estilos, opcional -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   <style>
-    body { font-family: Arial, sans-serif; margin: 24px; }
-    nav ul { list-style: none; padding: 0; display:flex; gap:12px; }
-    nav a { text-decoration: none; color: #0a58ca; }
-    .flash { margin:12px 0; }
+    nav ul { list-style: none; display: flex; gap: .75rem; padding: .5rem; }
+    nav a { text-decoration: none; }
+    #flash { margin: 1rem; }
+    .flash { padding: .5rem .75rem; border-radius: .25rem; margin-bottom: .5rem; }
+    .flash.success { background: #e7f7ee; border: 1px solid #1b9f5a; }
+    .flash.error { background: #fde8e8; border: 1px solid #c62828; }
   </style>
 </head>
 <body>
-  <nav>
-    <ul>
-      <li><a href="{{ url_for('index') }}">Inicio</a></li>
-      <li><a href="{{ url_for('cargar_base') }}">Cargar base</a></li>
-      <li><a href="{{ url_for('registrar_zona') }}">Zonas</a></li>
-      <li><a href="{{ url_for('registrar_mensajero') }}">Mensajeros</a></li>
-            <li><a href="{{ url_for('despachar_guias') }}">Ver guías</a></li>
-      <li><a href="{{ url_for('consultar_estado') }}">Consultar</a></li>
-      <li><a href="{{ url_for('ver_guias') }}">Ver guías</a></li>
-      <li><a href="{{ url_for('ver_despacho') }}">Ver despachos</a></li>
-      <li><a href="{{ url_for('ver_recogidas') }}">Recogidas</a></li>
-      <li><a href="{{ url_for('liquidacion') }}">Liquidación</a></li>
-    </ul>
-  </nav>
+  <header>
+    <nav>
+      <ul>
+        <li><a href="{{ url_for('index') }}">Inicio</a></li>
+        <li><a href="{{ url_for('registrar_zona') }}">Registrar zona</a></li>
+        <li><a href="{{ url_for('registrar_mensajero') }}">Registrar mensajero</a></li>
+        <li><a href="{{ url_for('cargar_base') }}">Cargar base (Excel)</a></li>
+        <li><a href="{{ url_for('consultar_estado') }}">Consultar estado</a></li>
+        <!-- Corregido: usa endpoint existente 'ver_guias' (alias a despachar_guias) -->
+        <li><a href="{{ url_for('ver_guias') }}">Ver guías</a></li>
+        <li><a href="{{ url_for('registrar_recepcion') }}">Registrar recepción</a></li>
+        <li><a href="{{ url_for('registrar_recogida') }}">Registrar recogida</a></li>
+        <li><a href="{{ url_for('liquidacion') }}">Liquidación</a></li>
+      </ul>
+    </nav>
+  </header>
 
-  <div class="flash">
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        <ul>
-        {% for category, msg in messages %}
-          <li style="color: {% if category == 'error' %}red{% elif category == 'success' %}green{% else %}black{% endif %};">
-            <strong>{{ category }}:</strong> {{ msg }}
-          </li>
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <section id="flash">
+        {% for category, message in messages %}
+          <div class="flash {{ category }}">{{ message }}</div>
         {% endfor %}
-        </ul>
-      {% endif %}
-    {% endwith %}
-  </div>
+      </section>
+    {% endif %}
+  {% endwith %}
 
   <main>
     {% block content %}{% endblock %}
   </main>
+
+  <footer>
+    <small>&copy; {{ 2025 }} Mensajería</small>
+  </footer>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>
