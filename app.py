@@ -1,3 +1,4 @@
+import os
 from flask import Flask, render_template, request, redirect, url_for, flash
 import psycopg2
 from urllib.parse import urlparse, parse_qsl
@@ -8,23 +9,31 @@ import io
 app = Flask(__name__)
 app.secret_key = 'secreto'
 
-# Cambia esto por tu URL PostgreSQL Neon (asegúrate de que sslmode=require)
-DATABASE_URL = "postgresql://neondb_owner:npg_3owpfIUOAT0a@ep-soft-bush-acv2a8v4-pooler.sa-east-1.aws.neon.tech/neondb?sslmode=require"
+# URL de Neon (usa siempre sslmode=require; idealmente colócala en una variable de entorno)
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://neondb_owner:npg_3owpfIUOAT0a@ep-soft-bush-acv2a8v4-pooler.sa-east-1.aws.neon.tech/neondb?sslmode=require"
+)
 
 def get_connection():
+    """
+    Construye un DSN válido para psycopg2 a partir de la DATABASE_URL.
+    Los parámetros extra (p. ej., sslmode=require) se agregan como pares separados por espacio.
+    """
     url = urlparse(DATABASE_URL)
-    query_params = dict(parse_qsl(url.query))
-    query_params.pop('channel_binding', None)  # psycopg2 no soporta channel_binding
-    query_string = '&'.join(f"{k}={v}" for k, v in query_params.items() if v)
-    dsn = (
-        f"dbname={url.path[1:]} "
-        f"user={url.username} "
-        f"password={url.password} "
-        f"host={url.hostname} "
-        f"port={url.port}"
-    )
-    if query_string:
-        dsn += f" {query_string}"
+    params = dict(parse_qsl(url.query))
+    # psycopg2 no soporta channel_binding; quitar si aparece
+    params.pop('channel_binding', None)
+
+    dsn_parts = [
+        f"dbname={url.path.lstrip('/')}",
+        f"user={url.username}",
+        f"password={url.password}",
+        f"host={url.hostname}",
+        f"port={url.port or 5432}",
+    ]
+    dsn_parts += [f"{k}={v}" for k, v in params.items() if v]
+    dsn = ' '.join(dsn_parts)
     return psycopg2.connect(dsn)
 
 def crear_tablas():
@@ -82,6 +91,13 @@ def crear_tablas():
     cur.close()
     conn.close()
 
+# Crear tablas también cuando se carga la app con Gunicorn
+crear_tablas()
+
+@app.route('/health')
+def health():
+    return "OK", 200
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -119,6 +135,7 @@ def registrar_mensajero():
     zonas = cur.fetchall()
     cur.close()
     conn.close()
+
     if request.method == 'POST':
         nombre = request.form['nombre']
         zona = request.form['zona']
@@ -135,6 +152,7 @@ def registrar_mensajero():
             cur.close()
             conn.close()
         return redirect(url_for('registrar_mensajero'))
+
     return render_template('registrar_mensajero.html', zonas=zonas)
 
 @app.route('/cargar_base', methods=['GET', 'POST'])
@@ -154,42 +172,39 @@ def cargar_base():
             flash(f'Error al leer el archivo Excel: {e}', 'error')
             return redirect(url_for('cargar_base'))
 
-        # Columnas necesarias (sin zona)
         columnas_esperadas = {'remitente', 'numero_guia', 'destinatario', 'direccion', 'ciudad'}
         if not columnas_esperadas.issubset(set(df.columns.str.lower())):
-            flash(f'El archivo Excel debe contener las columnas: {", ".join(columnas_esperadas)}', 'error')
+            faltantes = columnas_esperadas - set(df.columns.str.lower())
+            flash(f'El archivo Excel debe contener las columnas: {", ".join(sorted(faltantes))}', 'error')
             return redirect(url_for('cargar_base'))
 
-        # Convertir columnas a minúsculas para uniformidad
         df.columns = df.columns.str.lower()
 
-        # Insertar o actualizar guías en la base de datos
         conn = get_connection()
         cur = conn.cursor()
         registros_insertados = 0
-        for _, row in df.iterrows():
-            try:
+        try:
+            for _, row in df.iterrows():
                 cur.execute("""
                     INSERT INTO guias (numero_guia, remitente, destinatario, direccion, ciudad)
                     VALUES (%s, %s, %s, %s, %s)
                     ON CONFLICT (numero_guia) DO UPDATE SET
-                    remitente = EXCLUDED.remitente,
-                    destinatario = EXCLUDED.destinatario,
-                    direccion = EXCLUDED.direccion,
-                    ciudad = EXCLUDED.ciudad
+                      remitente = EXCLUDED.remitente,
+                      destinatario = EXCLUDED.destinatario,
+                      direccion = EXCLUDED.direccion,
+                      ciudad = EXCLUDED.ciudad
                 """, (row['numero_guia'], row['remitente'], row['destinatario'], row['direccion'], row['ciudad']))
                 registros_insertados += 1
-            except Exception as e:
-                flash(f'Error al guardar en DB: {e}', 'error')
-                conn.rollback()
-                cur.close()
-                conn.close()
-                return redirect(url_for('cargar_base'))
-        conn.commit()
-        cur.close()
-        conn.close()
-        flash(f'{registros_insertados} guías insertadas/actualizadas correctamente', 'success')
+            conn.commit()
+            flash(f'{registros_insertados} guías insertadas/actualizadas correctamente', 'success')
+        except Exception as e:
+            conn.rollback()
+            flash(f'Error al guardar en DB: {e}', 'error')
+        finally:
+            cur.close()
+            conn.close()
         return redirect(url_for('cargar_base'))
+
     return render_template('cargar_base.html')
 
 @app.route('/consultar_estado', methods=['GET', 'POST'])
@@ -225,7 +240,6 @@ def despachar_guias():
         mensajero = request.form['mensajero']
         conn = get_connection()
         cur = conn.cursor()
-        # Aquí podrías validar zona si luego decides implementarla
         try:
             cur.execute("INSERT INTO despachos (numero_guia, mensajero) VALUES (%s, %s)", (numero_guia, mensajero))
             cur.execute("UPDATE guias SET estado='despachado' WHERE numero_guia=%s", (numero_guia,))
@@ -240,6 +254,9 @@ def despachar_guias():
         return redirect(url_for('despachar_guias'))
 
     return render_template('despachar_guias.html', guias=guias, mensajeros=mensajeros)
+
+# Alias: /guias -> endpoint 'ver_guias' -> misma función despachar_guias
+app.add_url_rule('/guias', endpoint='ver_guias', view_func=despachar_guias, methods=['GET', 'POST'])
 
 @app.route('/registrar_recepcion', methods=['GET', 'POST'])
 def registrar_recepcion():
@@ -277,7 +294,10 @@ def registrar_recogida():
         conn = get_connection()
         cur = conn.cursor()
         try:
-            cur.execute("INSERT INTO recogidas (numero_guia, fecha, observaciones) VALUES (%s, %s, %s)", (numero_guia, fecha_dt, observaciones))
+            cur.execute(
+                "INSERT INTO recogidas (numero_guia, fecha, observaciones) VALUES (%s, %s, %s)",
+                (numero_guia, fecha_dt, observaciones)
+            )
             conn.commit()
             flash('Recogida registrada', 'success')
         except Exception as e:
@@ -294,11 +314,14 @@ def liquidacion():
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
-        SELECT mensajero, COUNT(*) as total_guias, SUM(z.tarifa) as total_pago
+        SELECT d.mensajero,
+               COUNT(*) AS total_guias,
+               COALESCE(SUM(z.tarifa), 0) AS total_pago
         FROM despachos d
         JOIN guias g ON d.numero_guia = g.numero_guia
         JOIN zonas z ON g.zona = z.nombre
-        GROUP BY mensajero
+        GROUP BY d.mensajero
+        ORDER BY d.mensajero
     """)
     resultados = cur.fetchall()
     cur.close()
@@ -306,5 +329,6 @@ def liquidacion():
     return render_template('liquidacion.html', resultados=resultados)
 
 if __name__ == '__main__':
-    crear_tablas()
-    app.run(host='0.0.0.0', port=10000, debug=True)
+    # Para correr local: respeta PORT o usa 10000 por defecto
+    port = int(os.getenv("PORT", "10000"))
+    app.run(host='0.0.0.0', port=port, debug=True)
