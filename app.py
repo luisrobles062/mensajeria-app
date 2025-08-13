@@ -9,21 +9,17 @@ import io
 app = Flask(__name__)
 app.secret_key = 'secreto'
 
-# URL de Neon (usa siempre sslmode=require; idealmente colócala en una variable de entorno)
+# Pon esta URL en un env en Render (Settings > Environment):
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql://neondb_owner:npg_3owpfIUOAT0a@ep-soft-bush-acv2a8v4-pooler.sa-east-1.aws.neon.tech/neondb?sslmode=require"
 )
 
 def get_connection():
-    """
-    Construye un DSN válido para psycopg2 a partir de la DATABASE_URL.
-    Los parámetros extra (p. ej., sslmode=require) se agregan como pares separados por espacio.
-    """
+    """Construye un DSN válido para psycopg2 desde DATABASE_URL."""
     url = urlparse(DATABASE_URL)
     params = dict(parse_qsl(url.query))
-    # psycopg2 no soporta channel_binding; quitar si aparece
-    params.pop('channel_binding', None)
+    params.pop('channel_binding', None)  # psycopg2 no lo usa
 
     dsn_parts = [
         f"dbname={url.path.lstrip('/')}",
@@ -32,7 +28,7 @@ def get_connection():
         f"host={url.hostname}",
         f"port={url.port or 5432}",
     ]
-    dsn_parts += [f"{k}={v}" for k, v in params.items() if v]
+    dsn_parts += [f"{k}={v}" for k, v in params.items() if v]  # p. ej. sslmode=require
     dsn = ' '.join(dsn_parts)
     return psycopg2.connect(dsn)
 
@@ -91,7 +87,7 @@ def crear_tablas():
     cur.close()
     conn.close()
 
-# Crear tablas también cuando se carga la app con Gunicorn
+# Asegura tablas también con gunicorn
 crear_tablas()
 
 @app.route('/health')
@@ -158,13 +154,10 @@ def registrar_mensajero():
 @app.route('/cargar_base', methods=['GET', 'POST'])
 def cargar_base():
     if request.method == 'POST':
-        if 'archivo' not in request.files:
+        if 'archivo' not in request.files or request.files['archivo'].filename == '':
             flash('No se seleccionó ningún archivo', 'error')
             return redirect(url_for('cargar_base'))
         file = request.files['archivo']
-        if file.filename == '':
-            flash('No se seleccionó ningún archivo', 'error')
-            return redirect(url_for('cargar_base'))
         try:
             data = file.read()
             df = pd.read_excel(io.BytesIO(data), engine='openpyxl')
@@ -173,8 +166,9 @@ def cargar_base():
             return redirect(url_for('cargar_base'))
 
         columnas_esperadas = {'remitente', 'numero_guia', 'destinatario', 'direccion', 'ciudad'}
-        if not columnas_esperadas.issubset(set(df.columns.str.lower())):
-            faltantes = columnas_esperadas - set(df.columns.str.lower())
+        cols_lower = set(df.columns.str.lower())
+        if not columnas_esperadas.issubset(cols_lower):
+            faltantes = columnas_esperadas - cols_lower
             flash(f'El archivo Excel debe contener las columnas: {", ".join(sorted(faltantes))}', 'error')
             return redirect(url_for('cargar_base'))
 
@@ -255,8 +249,12 @@ def despachar_guias():
 
     return render_template('despachar_guias.html', guias=guias, mensajeros=mensajeros)
 
-# Alias: /guias -> endpoint 'ver_guias' -> misma función despachar_guias
+# ====== Aliases para plantillas antiguas ======
+# /guias -> endpoint 'ver_guias'
 app.add_url_rule('/guias', endpoint='ver_guias', view_func=despachar_guias, methods=['GET', 'POST'])
+# /despachos -> endpoint 'ver_despacho'
+app.add_url_rule('/despachos', endpoint='ver_despacho', view_func=despachar_guias, methods=['GET', 'POST'])
+# ==============================================
 
 @app.route('/registrar_recepcion', methods=['GET', 'POST'])
 def registrar_recepcion():
@@ -329,6 +327,5 @@ def liquidacion():
     return render_template('liquidacion.html', resultados=resultados)
 
 if __name__ == '__main__':
-    # Para correr local: respeta PORT o usa 10000 por defecto
     port = int(os.getenv("PORT", "10000"))
     app.run(host='0.0.0.0', port=port, debug=True)
