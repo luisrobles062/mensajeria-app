@@ -1,17 +1,58 @@
-{% extends "base.html" %}
-{% block title %}Registrar mensajero{% endblock %}
-{% block content %}
-  <h2>Registrar mensajero</h2>
-  <form method="post" action="{{ url_for('registrar_mensajero') }}">
-    <label>Nombre:</label><br>
-    <input type="text" name="nombre" required><br>
-    <label>Zona:</label><br>
-    <select name="zona" required>
-      <option value="">-- seleccionar --</option>
-      {% for z in zonas %}
-        <option value="{{ z }}">{{ z }}</option>
-      {% endfor %}
-    </select><br><br>
-    <button type="submit">Registrar</button>
-  </form>
-{% endblock %}
+@app.route('/registrar_mensajero', methods=['GET', 'POST'])
+def registrar_mensajero():
+    # Cargar zonas para el select
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT nombre FROM zonas ORDER BY nombre")
+    zonas = [z[0] for z in cur.fetchall()]
+    cur.close()
+    conn.close()
+
+    if request.method == 'POST':
+        nombre = (request.form.get('nombre') or '').strip()
+        zona = (request.form.get('zona') or '').strip()
+
+        if not nombre:
+            flash('El nombre del mensajero es obligatorio', 'error')
+            return redirect(url_for('registrar_mensajero'))
+
+        if not zonas:
+            flash('Primero registra al menos una zona antes de crear mensajeros', 'error')
+            return redirect(url_for('registrar_mensajero'))
+
+        if zona and zona not in zonas:
+            flash('La zona seleccionada no existe', 'error')
+            return redirect(url_for('registrar_mensajero'))
+
+        conn = get_connection()
+        cur = conn.cursor()
+        try:
+            # UPSERT: si existe, actualiza la zona
+            cur.execute("""
+                INSERT INTO mensajeros (nombre, zona)
+                VALUES (%s, %s)
+                ON CONFLICT (nombre) DO UPDATE SET zona = EXCLUDED.zona
+            """, (nombre, zona or None))
+            conn.commit()
+
+            # Diferencia mensaje nuevo vs. actualización
+            cur.execute("SELECT 1 FROM mensajeros WHERE nombre = %s", (nombre,))
+            flash('Mensajero registrado/actualizado exitosamente', 'success')
+
+        except psycopg2.errors.ForeignKeyViolation:
+            conn.rollback()
+            flash('La zona seleccionada no existe (FK)', 'error')
+        except psycopg2.IntegrityError as e:
+            conn.rollback()
+            # Mensaje más específico por si vuelve a pasar otra integridad
+            flash(f'Error de integridad: {getattr(e, "diag", None) and e.diag.message_primary or str(e)}', 'error')
+        except Exception as e:
+            conn.rollback()
+            flash(f'Error inesperado: {e}', 'error')
+        finally:
+            cur.close()
+            conn.close()
+
+        return redirect(url_for('registrar_mensajero'))
+
+    return render_template('registrar_mensajero.html', zonas=zonas)
