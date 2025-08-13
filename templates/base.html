@@ -4,10 +4,9 @@
   <meta charset="utf-8">
   <title>{% block title %}App de Mensajería{% endblock %}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <!-- Tus estilos, opcional -->
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   <style>
-    nav ul { list-style: none; display: flex; gap: .75rem; padding: .5rem; }
+    nav ul { list-style: none; display: flex; gap: .75rem; padding: .5rem; flex-wrap: wrap; }
     nav a { text-decoration: none; }
     #flash { margin: 1rem; }
     .flash { padding: .5rem .75rem; border-radius: .25rem; margin-bottom: .5rem; }
@@ -24,7 +23,8 @@
         <li><a href="{{ url_for('registrar_mensajero') }}">Registrar mensajero</a></li>
         <li><a href="{{ url_for('cargar_base') }}">Cargar base (Excel)</a></li>
         <li><a href="{{ url_for('consultar_estado') }}">Consultar estado</a></li>
-        <!-- Corregido: usa endpoint existente 'ver_guias' (alias a despachar_guias) -->
+        <!-- Ambos enlaces funcionan gracias a los alias -->
+        <li><a href="{{ url_for('ver_despacho') }}">Ver despachos</a></li>
         <li><a href="{{ url_for('ver_guias') }}">Ver guías</a></li>
         <li><a href="{{ url_for('registrar_recepcion') }}">Registrar recepción</a></li>
         <li><a href="{{ url_for('registrar_recogida') }}">Registrar recogida</a></li>
