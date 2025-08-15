@@ -101,8 +101,8 @@ def index():
 @app.route('/registrar_zona', methods=['GET', 'POST'])
 def registrar_zona():
     if request.method == 'POST':
-        nombre = request.form['nombre']
-        tarifa = request.form['tarifa']
+        nombre = request.form['nombre'].strip()
+        tarifa = request.form['tarifa'].strip()
         try:
             tarifa = float(tarifa)
         except ValueError:
@@ -126,7 +126,6 @@ def registrar_zona():
 @app.route('/registrar_mensajero', methods=['GET', 'POST'])
 def registrar_mensajero():
     try:
-        # Cargar las zonas para el formulario
         conn = get_connection()
         cur = conn.cursor()
         cur.execute("SELECT nombre FROM zonas")
@@ -149,7 +148,6 @@ def registrar_mensajero():
         cur = conn.cursor()
 
         try:
-            # Verificar si ya existe el mensajero por su nombre
             cur.execute("SELECT nombre FROM mensajeros WHERE LOWER(nombre) = %s", (nombre,))
             existe = cur.fetchone()
 
@@ -166,7 +164,7 @@ def registrar_mensajero():
         except Exception as e:
             conn.rollback()
             flash(f"Error al registrar mensajero: {e}", "error")
-            print(f"[ERROR registrar_mensajero] {e}")  # <-- Esto lo verás en logs
+            print(f"[ERROR registrar_mensajero] {e}")
 
         finally:
             cur.close()
@@ -230,74 +228,61 @@ def cargar_base():
 def consultar_estado():
     estado = None
     if request.method == 'POST':
-        numero_guia = request.form['numero_guia']
-        
+        numero_guia = request.form['numero_guia'].strip()
+
         try:
             conn = get_connection()
             cur = conn.cursor()
 
-            # 1. Buscar la guía en la base de datos
             cur.execute("SELECT numero_guia FROM guias WHERE numero_guia = %s", (numero_guia,))
             guia = cur.fetchone()
 
             if guia:
-                # 2. Si la guía existe, determinar el estado
-                estado = "En Verificación"  # Default value
+                estado = "En Verificación"  # default
 
-                # Verificar si la guía está en la tabla de despachos
                 cur.execute("""
-                    SELECT mensajero, zona, fecha_despacho 
+                    SELECT mensajero, fecha_despacho 
                     FROM despachos 
                     WHERE numero_guia = %s 
                     ORDER BY fecha_despacho DESC 
                     LIMIT 1
                 """, (numero_guia,))
                 despacho = cur.fetchone()
-                
+
                 if despacho:
-                    estado = f"Despachada a {despacho[0]} en {despacho[1]} el {despacho[2]}"
+                    estado = f"Despachada a {despacho[0]} el {despacho[1]}"
                 else:
-                    # Si no se encuentra en despachos, revisar en recepciones
                     cur.execute("""
-                        SELECT mensajero, zona, fecha_recepcion, causal 
+                        SELECT estado, causal, fecha_recepcion 
                         FROM recepciones 
                         WHERE numero_guia = %s 
                         ORDER BY fecha_recepcion DESC 
                         LIMIT 1
                     """, (numero_guia,))
                     recepcion = cur.fetchone()
-                    
                     if recepcion:
-                        estado = f"Entregada/Devuelta por {recepcion[0]} en {recepcion[1]} el {recepcion[2]}. Causal: {recepcion[3]}"
+                        estado = f"Estado: {recepcion[0]}. Causal: {recepcion[1]}. Fecha: {recepcion[2]}"
                     else:
-                        estado = "En Verificación"  # Si no está en despachos ni en recepciones, sigue en verificación
+                        estado = "En Verificación"
             else:
-                estado = "Guía no encontrada"  # Si la guía no está en la base de datos
+                estado = "Guía no encontrada"
 
             cur.close()
             conn.close()
-
         except Exception as e:
             flash(f"Error al consultar el estado: {e}", "error")
-            print(f"[ERROR] {e}")  # Mostrar el error en los logs del servidor
-    
+            print(f"[ERROR consultar_estado] {e}")
+
     return render_template('consultar_estado.html', estado=estado)
-
-
 
 @app.route('/despachar_guias', methods=['GET', 'POST'])
 def despachar_guias():
     conn = get_connection()
     cur = conn.cursor()
-
-    # Obtener las guías con estado 'En Verificación'
     cur.execute("SELECT numero_guia FROM guias WHERE estado='pendiente'")
-    guias = cur.fetchall()
-
-    # Obtener los mensajeros registrados
+    guias = [g[0] for g in cur.fetchall()]
     cur.execute("SELECT nombre FROM mensajeros")
-    mensajeros = cur.fetchall()
-
+    mensajeros = [m[0] for m in cur.fetchall()]
     cur.close()
     conn.close()
 
@@ -305,44 +290,34 @@ def despachar_guias():
         numero_guia = request.form['numero_guia']
         mensajero = request.form['mensajero']
 
-        # Verificar que la guía y el mensajero existan antes de continuar
         conn = get_connection()
         cur = conn.cursor()
-
         try:
-            # Verificar si la guía existe y está en estado "pendiente" (en verificación)
             cur.execute("SELECT estado FROM guias WHERE numero_guia = %s", (numero_guia,))
             guia = cur.fetchone()
 
-            if guia and guia[0] == 'pendiente':  # Solo se puede despachar si la guía está "pendiente"
-                # Verificar si el mensajero existe
+            if guia and guia[0] == 'pendiente':
                 cur.execute("SELECT nombre FROM mensajeros WHERE nombre = %s", (mensajero,))
                 mensajero_existente = cur.fetchone()
-
                 if mensajero_existente:
-                    # Registrar el despacho
                     cur.execute("INSERT INTO despachos (numero_guia, mensajero) VALUES (%s, %s)", (numero_guia, mensajero))
-                    # Actualizar el estado de la guía a 'despachado'
                     cur.execute("UPDATE guias SET estado='despachado' WHERE numero_guia=%s", (numero_guia,))
                     conn.commit()
                     flash('Guía despachada correctamente', 'success')
                 else:
                     flash('El mensajero seleccionado no existe', 'error')
-
             elif guia is None:
                 flash('La guía no existe', 'error')
-            elif guia[0] != 'pendiente':
+            else:
                 flash('La guía no está en estado pendiente', 'error')
 
         except Exception as e:
             conn.rollback()
             flash(f'Error al despachar guía: {e}', 'error')
-            print(f"[ERROR] {e}")  # Log de error detallado
-
+            print(f"[ERROR despachar_guias] {e}")
         finally:
             cur.close()
             conn.close()
-
         return redirect(url_for('despachar_guias'))
 
     return render_template('despachar_guias.html', guias=guias, mensajeros=mensajeros)
@@ -351,8 +326,6 @@ def despachar_guias():
 def ver_despachos():
     conn = get_connection()
     cur = conn.cursor()
-
-    # Obtener número de guía, mensajero, zona y fecha de despacho
     cur.execute("""
         SELECT d.numero_guia, d.mensajero, g.zona, d.fecha_despacho
         FROM despachos d
@@ -360,19 +333,16 @@ def ver_despachos():
         ORDER BY d.fecha_despacho DESC
     """)
     despachos = cur.fetchall()
-
     cur.close()
     conn.close()
-
     return render_template('ver_despachos.html', despachos=despachos)
-
 
 @app.route('/registrar_recepcion', methods=['GET', 'POST'])
 def registrar_recepcion():
     if request.method == 'POST':
-        numero_guia = request.form['numero_guia']
-        estado = request.form['estado']
-        causal = request.form['causal']
+        numero_guia = request.form['numero_guia'].strip()
+        estado = request.form['estado'].strip()
+        causal = request.form['causal'].strip()
         conn = get_connection()
         cur = conn.cursor()
         try:
@@ -392,9 +362,9 @@ def registrar_recepcion():
 @app.route('/registrar_recogida', methods=['GET', 'POST'])
 def registrar_recogida():
     if request.method == 'POST':
-        numero_guia = request.form['numero_guia']
-        fecha = request.form['fecha']
-        observaciones = request.form['observaciones']
+        numero_guia = request.form['numero_guia'].strip()
+        fecha = request.form['fecha'].strip()
+        observaciones = request.form['observaciones'].strip()
         try:
             fecha_dt = datetime.strptime(fecha, '%Y-%m-%d')
         except ValueError:
@@ -440,13 +410,3 @@ def liquidacion():
 if __name__ == '__main__':
     port = int(os.getenv("PORT", "10000"))
     app.run(host='0.0.0.0', port=port, debug=True)
-
-
-
-
-
-
-
-
-
-
