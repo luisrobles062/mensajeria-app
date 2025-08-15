@@ -347,6 +347,25 @@ def despachar_guias():
 
     return render_template('despachar_guias.html', guias=guias, mensajeros=mensajeros)
 
+@app.route('/ver_despachos', methods=['GET'])
+def ver_despachos():
+    conn = get_connection()
+    cur = conn.cursor()
+
+    # Obtener número de guía, mensajero, zona y fecha de despacho
+    cur.execute("""
+        SELECT d.numero_guia, d.mensajero, g.zona, d.fecha_despacho
+        FROM despachos d
+        JOIN guias g ON d.numero_guia = g.numero_guia
+        ORDER BY d.fecha_despacho DESC
+    """)
+    despachos = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    return render_template('ver_despachos.html', despachos=despachos)
+
 
 @app.route('/registrar_recepcion', methods=['GET', 'POST'])
 def registrar_recepcion():
@@ -421,6 +440,7 @@ def liquidacion():
 if __name__ == '__main__':
     port = int(os.getenv("PORT", "10000"))
     app.run(host='0.0.0.0', port=port, debug=True)
+
 
 
 
