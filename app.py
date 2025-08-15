@@ -149,8 +149,8 @@ def registrar_mensajero():
         cur = conn.cursor()
 
         try:
-            # Verificar si ya existe el mensajero
-            cur.execute("SELECT id FROM mensajeros WHERE LOWER(nombre) = %s", (nombre,))
+            # Verificar si ya existe el mensajero por su nombre
+            cur.execute("SELECT nombre FROM mensajeros WHERE LOWER(nombre) = %s", (nombre,))
             existe = cur.fetchone()
 
             if existe:
@@ -354,5 +354,6 @@ def liquidacion():
 if __name__ == '__main__':
     port = int(os.getenv("PORT", "10000"))
     app.run(host='0.0.0.0', port=port, debug=True)
+
 
 
