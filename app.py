@@ -287,41 +287,69 @@ def consultar_estado():
 
 @app.route('/despachar_guias', methods=['GET', 'POST'])
 def despachar_guias():
+    # Obtener la conexión y el cursor
     conn = get_connection()
     cur = conn.cursor()
+
+    # Obtener las guías con estado 'pendiente'
     cur.execute("SELECT numero_guia FROM guias WHERE estado='pendiente'")
     guias = cur.fetchall()
+
+    # Obtener los mensajeros registrados
     cur.execute("SELECT nombre FROM mensajeros")
     mensajeros = cur.fetchall()
+
+    # Cerrar la conexión inicial
     cur.close()
     conn.close()
 
+    # Si el formulario es enviado
     if request.method == 'POST':
         numero_guia = request.form['numero_guia']
         mensajero = request.form['mensajero']
+
+        # Verificar que la guía y el mensajero existan antes de continuar
         conn = get_connection()
         cur = conn.cursor()
+
         try:
-            cur.execute("INSERT INTO despachos (numero_guia, mensajero) VALUES (%s, %s)", (numero_guia, mensajero))
-            cur.execute("UPDATE guias SET estado='despachado' WHERE numero_guia=%s", (numero_guia,))
-            conn.commit()
-            flash('Guía despachada correctamente', 'success')
+            # Verificar si la guía existe y está en estado pendiente
+            cur.execute("SELECT estado FROM guias WHERE numero_guia = %s", (numero_guia,))
+            guia = cur.fetchone()
+            
+            if guia and guia[0] == 'pendiente':  # La guía existe y está pendiente
+                # Verificar si el mensajero existe
+                cur.execute("SELECT nombre FROM mensajeros WHERE nombre = %s", (mensajero,))
+                mensajero_existente = cur.fetchone()
+
+                if mensajero_existente:
+                    # Registrar el despacho
+                    cur.execute("INSERT INTO despachos (numero_guia, mensajero) VALUES (%s, %s)", (numero_guia, mensajero))
+                    # Actualizar el estado de la guía a 'despachado'
+                    cur.execute("UPDATE guias SET estado='despachado' WHERE numero_guia=%s", (numero_guia,))
+                    conn.commit()
+                    flash('Guía despachada correctamente', 'success')
+                else:
+                    flash('El mensajero seleccionado no existe', 'error')
+
+            elif guia is None:
+                flash('La guía no existe', 'error')
+            elif guia[0] != 'pendiente':
+                flash('La guía no está en estado pendiente', 'error')
+
         except Exception as e:
             conn.rollback()
             flash(f'Error al despachar guía: {e}', 'error')
+            print(f"[ERROR] {e}")  # Log de error detallado
+
         finally:
             cur.close()
             conn.close()
+
         return redirect(url_for('despachar_guias'))
 
     return render_template('despachar_guias.html', guias=guias, mensajeros=mensajeros)
 
-# ====== Aliases para plantillas antiguas ======
-# /guias -> endpoint 'ver_guias'
-app.add_url_rule('/guias', endpoint='ver_guias', view_func=despachar_guias, methods=['GET', 'POST'])
-# /despachos -> endpoint 'ver_despacho'
-app.add_url_rule('/despachos', endpoint='ver_despacho', view_func=despachar_guias, methods=['GET', 'POST'])
-# ==============================================
 
 @app.route('/registrar_recepcion', methods=['GET', 'POST'])
 def registrar_recepcion():
@@ -396,6 +424,7 @@ def liquidacion():
 if __name__ == '__main__':
     port = int(os.getenv("PORT", "10000"))
     app.run(host='0.0.0.0', port=port, debug=True)
+
 
 
 
