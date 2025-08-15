@@ -1,5 +1,7 @@
 {% extends "base.html" %}
+
 {% block title %}Consultar estado{% endblock %}
+
 {% block content %}
   <h2>Consultar estado de guía</h2>
   <form method="post" action="{{ url_for('consultar_estado') }}">
@@ -8,8 +10,8 @@
     <button type="submit">Consultar</button>
   </form>
 
-  {% if resultado %}
+  {% if estado %}
     <h3>Resultado</h3>
-    <p>Guía: {{ resultado.numero_guia }} — Estado: {{ resultado.estado }}</p>
+    <p>Estado de la guía: {{ estado }}</p>
   {% endif %}
 {% endblock %}
