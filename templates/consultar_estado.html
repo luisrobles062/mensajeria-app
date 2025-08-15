@@ -1,5 +1,7 @@
 {% extends "base.html" %}
+
 {% block title %}Consultar estado{% endblock %}
+
 {% block content %}
   <h2>Consultar estado de guía</h2>
   <form method="post" action="{{ url_for('consultar_estado') }}">
@@ -10,7 +12,7 @@
 
   {% if estado %}
     <h3>Estado de la guía: {{ estado }}</h3>
-  {% elif estado is not none %}
+  {% else %}
     <h3>Guía no encontrada</h3>
   {% endif %}
 {% endblock %}
