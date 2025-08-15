@@ -233,14 +233,37 @@ def consultar_estado():
         numero_guia = request.form['numero_guia']
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT estado FROM guias WHERE numero_guia = %s", (numero_guia,))
+        cur.execute("""
+            SELECT estado FROM guias WHERE numero_guia = %s
+        """, (numero_guia,))
         row = cur.fetchone()
+        
         if row:
             estado = row[0]
+            if estado == 'pendiente':
+                estado = "En Verificación"
+            elif estado == 'despachado':
+                cur.execute("""
+                    SELECT mensajero, zona, fecha_despacho FROM despachos
+                    WHERE numero_guia = %s ORDER BY fecha_despacho DESC LIMIT 1
+                """, (numero_guia,))
+                despacho = cur.fetchone()
+                estado = f"Despachado a {despacho[0]} en {despacho[1]} el {despacho[2]}"
+            elif estado == 'entregada' or estado == 'devuelta':
+                cur.execute("""
+                    SELECT mensajero, zona, fecha_recepcion, causal FROM recepciones
+                    WHERE numero_guia = %s ORDER BY fecha_recepcion DESC LIMIT 1
+                """, (numero_guia,))
+                recepcion = cur.fetchone()
+                estado = f"{estado.capitalize()} por {recepcion[0]} en {recepcion[1]} el {recepcion[2]}. Causal: {recepcion[3]}"
+            elif estado == 'faltante':
+                estado = "Guía no encontrada"
         else:
-            flash('Guía no encontrada', 'error')
+            estado = "Guía no encontrada"
+        
         cur.close()
         conn.close()
+    
     return render_template('consultar_estado.html', estado=estado)
 
 @app.route('/despachar_guias', methods=['GET', 'POST'])
@@ -354,6 +377,7 @@ def liquidacion():
 if __name__ == '__main__':
     port = int(os.getenv("PORT", "10000"))
     app.run(host='0.0.0.0', port=port, debug=True)
+
 
 
 
