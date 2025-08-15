@@ -236,52 +236,53 @@ def consultar_estado():
             conn = get_connection()
             cur = conn.cursor()
 
-            # 1. Buscar la guía en la tabla 'guias'
-            cur.execute("SELECT * FROM guias WHERE numero_guia = %s", (numero_guia,))
+            # 1. Buscar la guía en la base de datos
+            cur.execute("SELECT numero_guia FROM guias WHERE numero_guia = %s", (numero_guia,))
             guia = cur.fetchone()
-            
+
             if guia:
-                # 2. Si la guía está en la base de datos, determinar su estado:
-                
-                # - En Verificación: Si no tiene registro de despacho ni de recepción
+                # 2. Si la guía existe, determinar el estado
+                estado = "En Verificación"  # Default value
+
+                # Verificar si la guía está en la tabla de despachos
                 cur.execute("""
-                    SELECT 1 FROM despachos WHERE numero_guia = %s
+                    SELECT mensajero, zona, fecha_despacho 
+                    FROM despachos 
+                    WHERE numero_guia = %s 
+                    ORDER BY fecha_despacho DESC 
+                    LIMIT 1
                 """, (numero_guia,))
                 despacho = cur.fetchone()
                 
-                if not despacho:
-                    # No se ha despachado, ahora verificar si está en "Verificación"
-                    estado = "En Verificación"
-                    
-                    # - Despachada: Si existe en la tabla de despachos
+                if despacho:
+                    estado = f"Despachada a {despacho[0]} en {despacho[1]} el {despacho[2]}"
                 else:
-                    estado = "Despachada"
-                
-                # - Entregada o Devuelta: Si existe en la tabla de recepciones
-                if not estado:  # Si no fue "despachada" entonces revisamos si fue entregada o devuelta
+                    # Si no se encuentra en despachos, revisar en recepciones
                     cur.execute("""
-                        SELECT 1 FROM recepciones WHERE numero_guia = %s
+                        SELECT mensajero, zona, fecha_recepcion, causal 
+                        FROM recepciones 
+                        WHERE numero_guia = %s 
+                        ORDER BY fecha_recepcion DESC 
+                        LIMIT 1
                     """, (numero_guia,))
                     recepcion = cur.fetchone()
                     
                     if recepcion:
-                        estado = "Entregada/Devuelta"
-                    
-                # Si la guía tiene un estado "pendiente" o algo más, verificamos
-                if estado is None:
-                    estado = "Faltante"  # Si no está ni en despachos ni en recepciones
-
+                        estado = f"Entregada/Devuelta por {recepcion[0]} en {recepcion[1]} el {recepcion[2]}. Causal: {recepcion[3]}"
+                    else:
+                        estado = "En Verificación"  # Si no está en despachos ni en recepciones, sigue en verificación
             else:
-                estado = "Guía no encontrada"
-            
+                estado = "Guía no encontrada"  # Si la guía no está en la base de datos
+
             cur.close()
             conn.close()
 
         except Exception as e:
             flash(f"Error al consultar el estado: {e}", "error")
-            print(f"[ERROR] {e}")  # Mostrar el error en la consola de Flask
+            print(f"[ERROR] {e}")  # Mostrar el error en los logs del servidor
     
     return render_template('consultar_estado.html', estado=estado)
+
 
 
 @app.route('/despachar_guias', methods=['GET', 'POST'])
@@ -395,6 +396,7 @@ def liquidacion():
 if __name__ == '__main__':
     port = int(os.getenv("PORT", "10000"))
     app.run(host='0.0.0.0', port=port, debug=True)
+
 
 
 
