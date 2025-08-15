@@ -1,5 +1,7 @@
 {% extends "base.html" %}
+
 {% block title %}Despachar guías{% endblock %}
+
 {% block content %}
   <h2>Despachar guías</h2>
   <form method="post" action="{{ url_for('despachar_guias') }}">
@@ -7,16 +9,30 @@
     <select name="numero_guia" required>
       <option value="">-- seleccionar --</option>
       {% for g in guias %}
-        <option value="{{ g }}">{{ g }}</option>
+        <option value="{{ g[0] }}">{{ g[0] }}</option>  <!-- g[0] es el numero_guia -->
       {% endfor %}
     </select>
+    <br>
+    
     <label>Mensajero:</label>
     <select name="mensajero" required>
       <option value="">-- seleccionar --</option>
       {% for m in mensajeros %}
-        <option value="{{ m }}">{{ m }}</option>
+        <option value="{{ m[0] }}">{{ m[0] }}</option>  <!-- m[0] es el nombre del mensajero -->
       {% endfor %}
     </select>
+    <br>
+    
     <button type="submit">Despachar</button>
   </form>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div id="flash">
+        {% for category, message in messages %}
+          <div class="flash {{ category }}">{{ message }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
 {% endblock %}
