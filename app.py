@@ -125,28 +125,38 @@ def registrar_zona():
 
 @app.route('/registrar_mensajero', methods=['GET', 'POST'])
 def registrar_mensajero():
+    # Cargar las zonas para el formulario
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("SELECT nombre FROM zonas")
-    zonas = cur.fetchall()
+    zonas = [z[0] for z in cur.fetchall()]
     cur.close()
     conn.close()
 
     if request.method == 'POST':
-        nombre = request.form['nombre']
+        nombre = request.form['nombre'].strip().lower()
         zona = request.form['zona']
+
         conn = get_connection()
         cur = conn.cursor()
-        try:
-            cur.execute("INSERT INTO mensajeros (nombre, zona) VALUES (%s, %s)", (nombre, zona))
-            conn.commit()
-            flash('Mensajero registrado exitosamente', 'success')
-        except psycopg2.IntegrityError:
-            conn.rollback()
+
+        # Verificar si ya existe el mensajero
+        cur.execute("SELECT id FROM mensajeros WHERE LOWER(nombre) = %s", (nombre,))
+        existe = cur.fetchone()
+
+        if existe:
             flash('El mensajero ya existe', 'error')
-        finally:
-            cur.close()
-            conn.close()
+        else:
+            try:
+                cur.execute("INSERT INTO mensajeros (nombre, zona) VALUES (%s, %s)", (nombre, zona))
+                conn.commit()
+                flash('Mensajero registrado exitosamente', 'success')
+            except Exception as e:
+                conn.rollback()
+                flash(f'Error al registrar mensajero: {e}', 'error')
+        cur.close()
+        conn.close()
+
         return redirect(url_for('registrar_mensajero'))
 
     return render_template('registrar_mensajero.html', zonas=zonas)
@@ -329,3 +339,4 @@ def liquidacion():
 if __name__ == '__main__':
     port = int(os.getenv("PORT", "10000"))
     app.run(host='0.0.0.0', port=port, debug=True)
+
