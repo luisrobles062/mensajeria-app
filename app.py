@@ -125,37 +125,52 @@ def registrar_zona():
 
 @app.route('/registrar_mensajero', methods=['GET', 'POST'])
 def registrar_mensajero():
-    # Cargar las zonas para el formulario
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT nombre FROM zonas")
-    zonas = [z[0] for z in cur.fetchall()]
-    cur.close()
-    conn.close()
+    try:
+        # Cargar las zonas para el formulario
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT nombre FROM zonas")
+        zonas = [z[0] for z in cur.fetchall()]
+        cur.close()
+        conn.close()
+    except Exception as e:
+        flash(f"Error cargando zonas: {e}", "error")
+        zonas = []
 
     if request.method == 'POST':
-        nombre = request.form['nombre'].strip().lower()
-        zona = request.form['zona']
+        nombre = request.form.get('nombre', '').strip().lower()
+        zona = request.form.get('zona', '').strip()
+
+        if not nombre or not zona:
+            flash("Debes ingresar nombre y zona", "error")
+            return redirect(url_for('registrar_mensajero'))
 
         conn = get_connection()
         cur = conn.cursor()
 
-        # Verificar si ya existe el mensajero
-        cur.execute("SELECT id FROM mensajeros WHERE LOWER(nombre) = %s", (nombre,))
-        existe = cur.fetchone()
+        try:
+            # Verificar si ya existe el mensajero
+            cur.execute("SELECT id FROM mensajeros WHERE LOWER(nombre) = %s", (nombre,))
+            existe = cur.fetchone()
 
-        if existe:
-            flash('El mensajero ya existe', 'error')
-        else:
-            try:
-                cur.execute("INSERT INTO mensajeros (nombre, zona) VALUES (%s, %s)", (nombre, zona))
+            if existe:
+                flash('El mensajero ya existe', 'error')
+            else:
+                cur.execute(
+                    "INSERT INTO mensajeros (nombre, zona) VALUES (%s, %s)",
+                    (nombre, zona)
+                )
                 conn.commit()
                 flash('Mensajero registrado exitosamente', 'success')
-            except Exception as e:
-                conn.rollback()
-                flash(f'Error al registrar mensajero: {e}', 'error')
-        cur.close()
-        conn.close()
+
+        except Exception as e:
+            conn.rollback()
+            flash(f"Error al registrar mensajero: {e}", "error")
+            print(f"[ERROR registrar_mensajero] {e}")  # <-- Esto lo verás en logs
+
+        finally:
+            cur.close()
+            conn.close()
 
         return redirect(url_for('registrar_mensajero'))
 
@@ -339,4 +354,5 @@ def liquidacion():
 if __name__ == '__main__':
     port = int(os.getenv("PORT", "10000"))
     app.run(host='0.0.0.0', port=port, debug=True)
+
 
