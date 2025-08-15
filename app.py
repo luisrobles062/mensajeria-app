@@ -287,11 +287,10 @@ def consultar_estado():
 
 @app.route('/despachar_guias', methods=['GET', 'POST'])
 def despachar_guias():
-    # Obtener la conexión y el cursor
     conn = get_connection()
     cur = conn.cursor()
 
-    # Obtener las guías con estado 'pendiente'
+    # Obtener las guías con estado 'En Verificación'
     cur.execute("SELECT numero_guia FROM guias WHERE estado='pendiente'")
     guias = cur.fetchall()
 
@@ -299,11 +298,9 @@ def despachar_guias():
     cur.execute("SELECT nombre FROM mensajeros")
     mensajeros = cur.fetchall()
 
-    # Cerrar la conexión inicial
     cur.close()
     conn.close()
 
-    # Si el formulario es enviado
     if request.method == 'POST':
         numero_guia = request.form['numero_guia']
         mensajero = request.form['mensajero']
@@ -313,11 +310,11 @@ def despachar_guias():
         cur = conn.cursor()
 
         try:
-            # Verificar si la guía existe y está en estado pendiente
+            # Verificar si la guía existe y está en estado "pendiente" (en verificación)
             cur.execute("SELECT estado FROM guias WHERE numero_guia = %s", (numero_guia,))
             guia = cur.fetchone()
-            
-            if guia and guia[0] == 'pendiente':  # La guía existe y está pendiente
+
+            if guia and guia[0] == 'pendiente':  # Solo se puede despachar si la guía está "pendiente"
                 # Verificar si el mensajero existe
                 cur.execute("SELECT nombre FROM mensajeros WHERE nombre = %s", (mensajero,))
                 mensajero_existente = cur.fetchone()
@@ -424,6 +421,7 @@ def liquidacion():
 if __name__ == '__main__':
     port = int(os.getenv("PORT", "10000"))
     app.run(host='0.0.0.0', port=port, debug=True)
+
 
 
 
