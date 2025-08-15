@@ -1,17 +1,25 @@
 {% extends "base.html" %}
+
 {% block title %}Ver despachos{% endblock %}
+
 {% block content %}
   <h2>Despachos</h2>
+  
   {% if despachos %}
     <table border="1" cellpadding="6">
-      <tr><th>ID</th><th>Guía</th><th>Mensajero</th><th>Fecha</th><th>Estado</th></tr>
+      <tr>
+        <th>Guía</th>
+        <th>Mensajero</th>
+        <th>Zona</th>
+        <th>Fecha de Despacho</th>
+      </tr>
+      
       {% for d in despachos %}
         <tr>
-          <td>{{ d[0] }}</td>
-          <td>{{ d[1] }}</td>
-          <td>{{ d[2] }}</td>
-          <td>{{ d[3] }}</td>
-          <td>{{ d[4] }}</td>
+          <td>{{ d[0] }}</td>  <!-- Número de guía -->
+          <td>{{ d[1] }}</td>  <!-- Mensajero -->
+          <td>{{ d[2] }}</td>  <!-- Zona -->
+          <td>{{ d[3] }}</td>  <!-- Fecha de Despacho -->
         </tr>
       {% endfor %}
     </table>
