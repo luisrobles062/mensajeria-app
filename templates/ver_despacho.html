@@ -3,27 +3,40 @@
 {% block title %}Ver despachos{% endblock %}
 
 {% block content %}
-  <h2>Despachos</h2>
-  
-  {% if despachos %}
-    <table border="1" cellpadding="6">
-      <tr>
-        <th>Guía</th>
-        <th>Mensajero</th>
-        <th>Zona</th>
-        <th>Fecha de Despacho</th>
-      </tr>
-      
-      {% for d in despachos %}
+  <h2>Despachos realizados</h2>
+
+  {% if despachos and despachos|length > 0 %}
+    <table border="1" cellpadding="6" cellspacing="0">
+      <thead>
         <tr>
-          <td>{{ d[0] }}</td>  <!-- Número de guía -->
-          <td>{{ d[1] }}</td>  <!-- Mensajero -->
-          <td>{{ d[2] }}</td>  <!-- Zona -->
-          <td>{{ d[3] }}</td>  <!-- Fecha de Despacho -->
+          <th>Número de guía</th>
+          <th>Mensajero</th>
+          <th>Zona</th>
+          <th>Fecha de despacho</th>
         </tr>
-      {% endfor %}
+      </thead>
+      <tbody>
+        {% for d in despachos %}
+          <tr>
+            <td>{{ d[0] }}</td>
+            <td>{{ d[1] }}</td>
+            <td>{{ d[2] }}</td>
+            <td>{{ d[3] }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
     </table>
   {% else %}
-    <p>No hay despachos.</p>
+    <p>No hay despachos registrados aún.</p>
   {% endif %}
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div id="flash">
+        {% for category, message in messages %}
+          <div class="flash {{ category }}">{{ message }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
 {% endblock %}
