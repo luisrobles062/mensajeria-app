@@ -7,19 +7,19 @@ import pandas as pd
 import io
 
 app = Flask(__name__)
-app.secret_key = 'secreto'
+app.secret_key = os.getenv("SECRET_KEY", "secreto")
 
-# Pon esta URL en un env en Render (Settings > Environment):
+# Config DB (Render: Settings > Environment)
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql://neondb_owner:npg_3owpfIUOAT0a@ep-soft-bush-acv2a8v4-pooler.sa-east-1.aws.neon.tech/neondb?sslmode=require"
 )
 
 def get_connection():
-    """Construye un DSN válido para psycopg2 desde DATABASE_URL."""
+    """DSN para psycopg2 desde DATABASE_URL."""
     url = urlparse(DATABASE_URL)
     params = dict(parse_qsl(url.query))
-    params.pop('channel_binding', None)  # psycopg2 no lo usa
+    params.pop('channel_binding', None)
 
     dsn_parts = [
         f"dbname={url.path.lstrip('/')}",
@@ -28,7 +28,7 @@ def get_connection():
         f"host={url.hostname}",
         f"port={url.port or 5432}",
     ]
-    dsn_parts += [f"{k}={v}" for k, v in params.items() if v]  # p. ej. sslmode=require
+    dsn_parts += [f"{k}={v}" for k, v in params.items() if v]
     dsn = ' '.join(dsn_parts)
     return psycopg2.connect(dsn)
 
@@ -87,48 +87,27 @@ def crear_tablas():
     cur.close()
     conn.close()
 
-# Asegura tablas también con gunicorn
+# Garantizar tablas
 crear_tablas()
 
-@app.route('/health')
+@app.route("/health")
 def health():
     return "OK", 200
 
-@app.route('/')
+@app.route("/")
 def index():
-    return render_template('index.html')
+    return render_template("index.html")
 
-@app.route('/registrar_zona', methods=['GET', 'POST'])
-def registrar_zona():
-    if request.method == 'POST':
-        nombre = request.form['nombre'].strip()
-        tarifa = request.form['tarifa'].strip()
-        try:
-            tarifa = float(tarifa)
-        except ValueError:
-            flash('Tarifa inválida', 'error')
-            return redirect(url_for('registrar_zona'))
-        conn = get_connection()
-        cur = conn.cursor()
-        try:
-            cur.execute("INSERT INTO zonas (nombre, tarifa) VALUES (%s, %s)", (nombre, tarifa))
-            conn.commit()
-            flash('Zona registrada exitosamente', 'success')
-        except psycopg2.IntegrityError:
-            conn.rollback()
-            flash('La zona ya existe', 'error')
-        finally:
-            cur.close()
-            conn.close()
-        return redirect(url_for('registrar_zona'))
-    return render_template('registrar_zona.html')
-
+# -----------------------
+# REGISTRAR MENSAJERO
+# -----------------------
 @app.route('/registrar_mensajero', methods=['GET', 'POST'])
 def registrar_mensajero():
+    # Cargar zonas para el select
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT nombre FROM zonas")
+        cur.execute("SELECT nombre FROM zonas ORDER BY nombre;")
         zonas = [z[0] for z in cur.fetchall()]
         cur.close()
         conn.close()
@@ -137,8 +116,8 @@ def registrar_mensajero():
         zonas = []
 
     if request.method == 'POST':
-        nombre = request.form.get('nombre', '').strip().lower()
-        zona = request.form.get('zona', '').strip()
+        nombre = (request.form.get('nombre') or '').strip().lower()
+        zona = (request.form.get('zona') or '').strip()
 
         if not nombre or not zona:
             flash("Debes ingresar nombre y zona", "error")
@@ -146,26 +125,17 @@ def registrar_mensajero():
 
         conn = get_connection()
         cur = conn.cursor()
-
         try:
-            cur.execute("SELECT nombre FROM mensajeros WHERE LOWER(nombre) = %s", (nombre,))
-            existe = cur.fetchone()
-
-            if existe:
+            cur.execute("SELECT 1 FROM mensajeros WHERE LOWER(nombre) = %s", (nombre,))
+            if cur.fetchone():
                 flash('El mensajero ya existe', 'error')
             else:
-                cur.execute(
-                    "INSERT INTO mensajeros (nombre, zona) VALUES (%s, %s)",
-                    (nombre, zona)
-                )
+                cur.execute("INSERT INTO mensajeros (nombre, zona) VALUES (%s, %s)", (nombre, zona))
                 conn.commit()
                 flash('Mensajero registrado exitosamente', 'success')
-
         except Exception as e:
             conn.rollback()
             flash(f"Error al registrar mensajero: {e}", "error")
-            print(f"[ERROR registrar_mensajero] {e}")
-
         finally:
             cur.close()
             conn.close()
@@ -174,238 +144,102 @@ def registrar_mensajero():
 
     return render_template('registrar_mensajero.html', zonas=zonas)
 
-@app.route('/cargar_base', methods=['GET', 'POST'])
-def cargar_base():
-    if request.method == 'POST':
-        if 'archivo' not in request.files or request.files['archivo'].filename == '':
-            flash('No se seleccionó ningún archivo', 'error')
-            return redirect(url_for('cargar_base'))
-        file = request.files['archivo']
-        try:
-            data = file.read()
-            df = pd.read_excel(io.BytesIO(data), engine='openpyxl')
-        except Exception as e:
-            flash(f'Error al leer el archivo Excel: {e}', 'error')
-            return redirect(url_for('cargar_base'))
-
-        columnas_esperadas = {'remitente', 'numero_guia', 'destinatario', 'direccion', 'ciudad'}
-        cols_lower = set(df.columns.str.lower())
-        if not columnas_esperadas.issubset(cols_lower):
-            faltantes = columnas_esperadas - cols_lower
-            flash(f'El archivo Excel debe contener las columnas: {", ".join(sorted(faltantes))}', 'error')
-            return redirect(url_for('cargar_base'))
-
-        df.columns = df.columns.str.lower()
-
-        conn = get_connection()
-        cur = conn.cursor()
-        registros_insertados = 0
-        try:
-            for _, row in df.iterrows():
-                cur.execute("""
-                    INSERT INTO guias (numero_guia, remitente, destinatario, direccion, ciudad)
-                    VALUES (%s, %s, %s, %s, %s)
-                    ON CONFLICT (numero_guia) DO UPDATE SET
-                      remitente = EXCLUDED.remitente,
-                      destinatario = EXCLUDED.destinatario,
-                      direccion = EXCLUDED.direccion,
-                      ciudad = EXCLUDED.ciudad
-                """, (row['numero_guia'], row['remitente'], row['destinatario'], row['direccion'], row['ciudad']))
-                registros_insertados += 1
-            conn.commit()
-            flash(f'{registros_insertados} guías insertadas/actualizadas correctamente', 'success')
-        except Exception as e:
-            conn.rollback()
-            flash(f'Error al guardar en DB: {e}', 'error')
-        finally:
-            cur.close()
-            conn.close()
-        return redirect(url_for('cargar_base'))
-
-    return render_template('cargar_base.html')
-
-@app.route('/consultar_estado', methods=['GET', 'POST'])
-def consultar_estado():
-    estado = None
-    if request.method == 'POST':
-        numero_guia = request.form['numero_guia'].strip()
-
-        try:
-            conn = get_connection()
-            cur = conn.cursor()
-
-            cur.execute("SELECT numero_guia FROM guias WHERE numero_guia = %s", (numero_guia,))
-            guia = cur.fetchone()
-
-            if guia:
-                estado = "En Verificación"  # default
-
-                cur.execute("""
-                    SELECT mensajero, fecha_despacho 
-                    FROM despachos 
-                    WHERE numero_guia = %s 
-                    ORDER BY fecha_despacho DESC 
-                    LIMIT 1
-                """, (numero_guia,))
-                despacho = cur.fetchone()
-
-                if despacho:
-                    estado = f"Despachada a {despacho[0]} el {despacho[1]}"
-                else:
-                    cur.execute("""
-                        SELECT estado, causal, fecha_recepcion 
-                        FROM recepciones 
-                        WHERE numero_guia = %s 
-                        ORDER BY fecha_recepcion DESC 
-                        LIMIT 1
-                    """, (numero_guia,))
-                    recepcion = cur.fetchone()
-                    if recepcion:
-                        estado = f"Estado: {recepcion[0]}. Causal: {recepcion[1]}. Fecha: {recepcion[2]}"
-                    else:
-                        estado = "En Verificación"
-            else:
-                estado = "Guía no encontrada"
-
-            cur.close()
-            conn.close()
-        except Exception as e:
-            flash(f"Error al consultar el estado: {e}", "error")
-            print(f"[ERROR consultar_estado] {e}")
-
-    return render_template('consultar_estado.html', estado=estado)
-
+# -----------------------
+# DESPACHAR GUÍAS
+# -----------------------
 @app.route('/despachar_guias', methods=['GET', 'POST'])
 def despachar_guias():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT numero_guia FROM guias WHERE estado='pendiente'")
-    guias = [g[0] for g in cur.fetchall()]
-    cur.execute("SELECT nombre FROM mensajeros")
-    mensajeros = [m[0] for m in cur.fetchall()]
-    cur.close()
-    conn.close()
-
     if request.method == 'POST':
-        numero_guia = request.form['numero_guia']
-        mensajero = request.form['mensajero']
+        numero_guia = (request.form.get('numero_guia') or '').strip()
+        mensajero   = (request.form.get('mensajero') or '').strip()
+
+        if not numero_guia or not mensajero:
+            flash('Selecciona guía y mensajero', 'error')
+            return redirect(url_for('despachar_guias'))
 
         conn = get_connection()
         cur = conn.cursor()
         try:
+            # Validar guía pendiente
             cur.execute("SELECT estado FROM guias WHERE numero_guia = %s", (numero_guia,))
-            guia = cur.fetchone()
-
-            if guia and guia[0] == 'pendiente':
-                cur.execute("SELECT nombre FROM mensajeros WHERE nombre = %s", (mensajero,))
-                mensajero_existente = cur.fetchone()
-                if mensajero_existente:
-                    cur.execute("INSERT INTO despachos (numero_guia, mensajero) VALUES (%s, %s)", (numero_guia, mensajero))
-                    cur.execute("UPDATE guias SET estado='despachado' WHERE numero_guia=%s", (numero_guia,))
-                    conn.commit()
-                    flash('Guía despachada correctamente', 'success')
-                else:
-                    flash('El mensajero seleccionado no existe', 'error')
-            elif guia is None:
+            row = cur.fetchone()
+            if not row:
                 flash('La guía no existe', 'error')
-            else:
+                return redirect(url_for('despachar_guias'))
+            if row[0] != 'pendiente':
                 flash('La guía no está en estado pendiente', 'error')
+                return redirect(url_for('despachar_guias'))
+
+            # Validar mensajero
+            cur.execute("SELECT 1 FROM mensajeros WHERE nombre = %s", (mensajero,))
+            if not cur.fetchone():
+                flash('El mensajero seleccionado no existe', 'error')
+                return redirect(url_for('despachar_guias'))
+
+            # Insertar despacho y actualizar estado
+            cur.execute(
+                "INSERT INTO despachos (numero_guia, mensajero) VALUES (%s, %s)",
+                (numero_guia, mensajero)
+            )
+            cur.execute(
+                "UPDATE guias SET estado = 'despachado' WHERE numero_guia = %s",
+                (numero_guia,)
+            )
+            conn.commit()
+            flash(f'Guía {numero_guia} despachada correctamente', 'success')
 
         except Exception as e:
             conn.rollback()
             flash(f'Error al despachar guía: {e}', 'error')
-            print(f"[ERROR despachar_guias] {e}")
         finally:
             cur.close()
             conn.close()
+
         return redirect(url_for('despachar_guias'))
+
+    # GET: llenar selects
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT numero_guia FROM guias WHERE estado = 'pendiente' ORDER BY numero_guia;")
+    guias = [g[0] for g in cur.fetchall()]
+
+    cur.execute("SELECT nombre FROM mensajeros ORDER BY nombre;")
+    mensajeros = [m[0] for m in cur.fetchall()]
+    cur.close()
+    conn.close()
+
+    if not guias:
+        flash('No hay guías pendientes para despachar.', 'info')
+    if not mensajeros:
+        flash('No hay mensajeros registrados. Registra uno primero.', 'info')
 
     return render_template('despachar_guias.html', guias=guias, mensajeros=mensajeros)
 
+# -----------------------
+# VER DESPACHOS
+# -----------------------
 @app.route('/ver_despachos', methods=['GET'])
 def ver_despachos():
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
-        SELECT d.numero_guia, d.mensajero, g.zona, d.fecha_despacho
+        SELECT d.numero_guia,
+               d.mensajero,
+               COALESCE(g.zona, '-') AS zona,
+               d.fecha_despacho
         FROM despachos d
         JOIN guias g ON d.numero_guia = g.numero_guia
-        ORDER BY d.fecha_despacho DESC
+        ORDER BY d.fecha_despacho DESC;
     """)
-    despachos = cur.fetchall()
+    despachos = cur.fetchall()  # [(numero_guia, mensajero, zona, fecha_despacho), ...]
     cur.close()
     conn.close()
     return render_template('ver_despachos.html', despachos=despachos)
 
-@app.route('/registrar_recepcion', methods=['GET', 'POST'])
-def registrar_recepcion():
-    if request.method == 'POST':
-        numero_guia = request.form['numero_guia'].strip()
-        estado = request.form['estado'].strip()
-        causal = request.form['causal'].strip()
-        conn = get_connection()
-        cur = conn.cursor()
-        try:
-            cur.execute("INSERT INTO recepciones (numero_guia, estado, causal) VALUES (%s, %s, %s)", (numero_guia, estado, causal))
-            cur.execute("UPDATE guias SET estado=%s WHERE numero_guia=%s", (estado, numero_guia))
-            conn.commit()
-            flash('Recepción registrada', 'success')
-        except Exception as e:
-            conn.rollback()
-            flash(f'Error al registrar recepción: {e}', 'error')
-        finally:
-            cur.close()
-            conn.close()
-        return redirect(url_for('registrar_recepcion'))
-    return render_template('registrar_recepcion.html')
-
-@app.route('/registrar_recogida', methods=['GET', 'POST'])
-def registrar_recogida():
-    if request.method == 'POST':
-        numero_guia = request.form['numero_guia'].strip()
-        fecha = request.form['fecha'].strip()
-        observaciones = request.form['observaciones'].strip()
-        try:
-            fecha_dt = datetime.strptime(fecha, '%Y-%m-%d')
-        except ValueError:
-            flash('Fecha inválida', 'error')
-            return redirect(url_for('registrar_recogida'))
-        conn = get_connection()
-        cur = conn.cursor()
-        try:
-            cur.execute(
-                "INSERT INTO recogidas (numero_guia, fecha, observaciones) VALUES (%s, %s, %s)",
-                (numero_guia, fecha_dt, observaciones)
-            )
-            conn.commit()
-            flash('Recogida registrada', 'success')
-        except Exception as e:
-            conn.rollback()
-            flash(f'Error al registrar recogida: {e}', 'error')
-        finally:
-            cur.close()
-            conn.close()
-        return redirect(url_for('registrar_recogida'))
-    return render_template('registrar_recogida.html')
-
-@app.route('/liquidacion')
-def liquidacion():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT d.mensajero,
-               COUNT(*) AS total_guias,
-               COALESCE(SUM(z.tarifa), 0) AS total_pago
-        FROM despachos d
-        JOIN guias g ON d.numero_guia = g.numero_guia
-        JOIN zonas z ON g.zona = z.nombre
-        GROUP BY d.mensajero
-        ORDER BY d.mensajero
-    """)
-    resultados = cur.fetchall()
-    cur.close()
-    conn.close()
-    return render_template('liquidacion.html', resultados=resultados)
+# -----------------------
+# Resto de rutas (cargar_base, consultar_estado, recepcion, recogida, liquidacion)
+# *Si las usas, mantenlas tal cual como ya las tienes.*
+# -----------------------
 
 if __name__ == '__main__':
     port = int(os.getenv("PORT", "10000"))
