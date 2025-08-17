@@ -16,7 +16,7 @@
         <li><a href="{{ url_for('cargar_base') }}">Cargar base (Excel)</a></li>
         <li><a href="{{ url_for('consultar_estado') }}">Consultar estado</a></li>
         <li><a href="{{ url_for('despachar_guias') }}">Despachar guías</a></li>
-        <a href="{{ url_for('ver_despachos') }}"> Ver despachos</a>
+        <li><a href="{{ url_for('ver_despachos') }}">Ver despachos</a></li>
         <li><a href="{{ url_for('registrar_recepcion') }}">Registrar recepción</a></li>
         <li><a href="{{ url_for('registrar_recogida') }}">Registrar recogida</a></li>
         <li><a href="{{ url_for('liquidacion') }}">Liquidación</a></li>
@@ -25,8 +25,17 @@
   </header>
 
   <main>
-    {% block content %}
-    {% endblock %}
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <ul class="flashes">
+          {% for category, message in messages %}
+            <li class="flash {{ category }}">{{ message|safe }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
   </main>
 
   <footer>
